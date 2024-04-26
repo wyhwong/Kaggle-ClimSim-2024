@@ -1,5 +1,8 @@
 # Clim-Sim 2024
 
+## Prerequisites
+- GNU make:[https://www.gnu.org/software/make/manual/make.html](https://www.gnu.org/software/make/manual/make.html)
+
 ## Installation
 
 ```bash
