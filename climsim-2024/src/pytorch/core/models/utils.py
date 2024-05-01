@@ -54,7 +54,7 @@ def train(
     model: nn.Module,
     dataloaders: dict[sc.Phase, torch.utils.data.DataLoader],
     num_epochs: int,
-    optimizer: torch.optim.Optimizer,
+    optimizer: Optional[torch.optim.Optimizer] = None,
     scheduler: Optional[torch.optim.lr_scheduler.LRScheduler] = None,
     loss_fns: Optional[dict[sc.Phase, torch.nn.modules.loss._Loss]] = None,
 ) -> tuple[nn.Module, dict[str, torch.Tensor], dict[sc.Phase, list[float]]]:
@@ -65,7 +65,7 @@ def train(
         model (nn.Module): Model structure
         dataloaders (dict[Phase, DataLoader]): Data loaders
         num_epochs (int): Number of epochs
-        optimizier (Optimizer): Optimizer
+        optimizier (Optional[Optimizer]): Optimizer
         scheduler (Optional[LRScheduler]): Learning rate scheduler
         loss_fns (Optional[dict[Phase, _Loss]]): Loss functions
 
@@ -77,10 +77,17 @@ def train(
     torch.manual_seed(env.SEED)
     np.random.seed(env.SEED)
     torch.backends.cudnn.deterministic = True
+    local_logger.info("Random seed set to %d.", env.SEED)
 
     # Initialize loss functions if not provided
     if loss_fns is None:
+        local_logger.info("Loss functions not provided. Using L1Loss.")
         loss_fns = {sc.Phase.TRAINING: torch.nn.L1Loss(), sc.Phase.VALIDATION: torch.nn.L1Loss()}
+
+    # Initialize Adam optimizer if not provided
+    if optimizer is None:
+        local_logger.info("Optimizer not provided. Using Adam optimizer.")
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
     # Initialize the best weights and the best validation loss
     best_weights = deepcopy(model.state_dict())
