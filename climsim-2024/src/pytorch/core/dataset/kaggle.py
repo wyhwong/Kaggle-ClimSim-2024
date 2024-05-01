@@ -15,7 +15,7 @@ def output_compressed_parquet(
     model: nn.Module,
     df: pd.DataFrame,
     weights: pd.DataFrame,
-    output_path: str,
+    output_dir: str = ".",
 ) -> None:
     """
     Output the submission file in the format of a gzipped parquet file.
@@ -25,7 +25,7 @@ def output_compressed_parquet(
         model: The PyTorch model to use for prediction.
         df: The input DataFrame.
         weights: The weights to apply to the output columns.
-        output_path: The path to the output file.
+        output_dir: The path to the output file.
 
     Returns:
         None
@@ -51,7 +51,7 @@ def output_compressed_parquet(
         df_output[col] *= weights[col]
 
     df_output.to_parquet(
-        output_path,
+        path=f"{output_dir}/submission.parquet.gz",
         index=False,
         compression="gzip",
         engine="pyarrow",
