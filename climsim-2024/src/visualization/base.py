@@ -18,7 +18,7 @@ def initialize_plot(
     labels=sv.Labels(),
     padding=sv.Padding(),
     fontsize=12,
-    lines=Optional[list[sv.Line]],
+    lines: Optional[list[sv.Line]] = None,
 ) -> tuple[plt.Figure, plt.Axes]:
     """
     Initialize plot with specified number of rows and columns.

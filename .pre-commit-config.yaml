@@ -14,3 +14,8 @@ repos:
   - id: black
     args: ["--config", "./climsim-2024/pyproject.toml"]
     additional_dependencies: [ "black[toml]" ]
+
+- repo: https://github.com/kynan/nbstripout
+  rev: 0.7.1
+  hooks:
+    - id: nbstripout
