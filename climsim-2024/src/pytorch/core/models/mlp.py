@@ -2,10 +2,10 @@ from typing import Optional
 
 from torch import nn
 
-import pytorch.logger
+import logger
 
 
-local_logger = pytorch.logger.get_logger(__name__)
+local_logger = logger.get_logger(__name__)
 
 
 class MLP(nn.Module):

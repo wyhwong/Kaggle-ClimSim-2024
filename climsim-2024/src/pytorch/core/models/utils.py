@@ -1,10 +1,10 @@
 import torch
 from torch import nn
 
-import pytorch.logger
+import logger
 
 
-local_logger = pytorch.logger.get_logger(__name__)
+local_logger = logger.get_logger(__name__)
 
 
 def load_model(model: nn.Module, model_path: str) -> None:
