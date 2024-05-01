@@ -5,7 +5,7 @@ import seaborn as sns
 
 import logger
 import utils
-from schemas.visualization import Labels, Line, Padding
+import schemas.visualization as sv
 
 
 local_logger = logger.get_logger(__name__)
@@ -15,10 +15,10 @@ def initialize_plot(
     nrows=1,
     ncols=1,
     figsize=(10, 6),
-    labels=Labels(),
-    padding=Padding(),
+    labels=sv.Labels(),
+    padding=sv.Padding(),
     fontsize=12,
-    lines=Optional[list[Line]],
+    lines=Optional[list[sv.Line]],
 ) -> tuple[plt.Figure, plt.Axes]:
     """
     Initialize plot with specified number of rows and columns.
@@ -61,7 +61,7 @@ def initialize_plot(
     return (fig, axes)
 
 
-def add_lines_to_plot(ax: plt.Axes, lines: list[Line]) -> None:
+def add_lines_to_plot(ax: plt.Axes, lines: list[sv.Line]) -> None:
     """
     Add lines to plot.
 
@@ -77,7 +77,7 @@ def add_lines_to_plot(ax: plt.Axes, lines: list[Line]) -> None:
     """
 
     for line in lines:
-        if not isinstance(line, Line):
+        if not isinstance(line, sv.Line):
             error_msg = f"Expected Line, got {type(line)}."
             local_logger.error(error_msg)
             raise TypeError(error_msg)
