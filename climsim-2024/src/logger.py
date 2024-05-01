@@ -9,7 +9,8 @@ import env
 
 def get_logger(
     logger_name: str,
-    log_level: int = env.LOG_LEVEL,
+    streaming_log_level: int = env.STREAMING_LOG_LEVEL,
+    file_log_level: int = env.FILE_LOG_LEVEL,
     log_filepath: Optional[str] = env.LOG_FILEPATH,
 ) -> logging.Logger:
     """
@@ -17,7 +18,8 @@ def get_logger(
 
     Args:
         logger_name (str): Logger name
-        log_level (int): Log level of the logger
+        streaming_log_level (int): Streaming log level
+        file_log_level (int): File log level
         log_filepath (str): Log filepath
 
     Returns:
@@ -26,13 +28,12 @@ def get_logger(
 
     # Initialize logger object
     logger = logging.getLogger(logger_name)
-    logger.setLevel(log_level)
-
+    logger.setLevel(file_log_level)
     formatter = logging.Formatter(fmt=env.LOG_FMT, datefmt=env.LOG_DATEFMT)
 
     # Add stream handler to log to console
     stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setLevel(log_level)
+    stream_handler.setLevel(streaming_log_level)
     stream_handler.setFormatter(formatter)
     logger.addHandler(stream_handler)
 
@@ -48,7 +49,7 @@ def get_logger(
             when="midnight",
             backupCount=7,
         )
-        file_handler.setLevel(log_level)
+        file_handler.setLevel(file_log_level)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
