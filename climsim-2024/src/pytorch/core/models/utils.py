@@ -74,10 +74,10 @@ def train(
     """
 
     # Seed reset (for reproducibility)
-    torch.manual_seed(env.SEED)
-    np.random.seed(env.SEED)
+    torch.manual_seed(env.RANDOM_SEED)
+    np.random.seed(env.RANDOM_SEED)
     torch.backends.cudnn.deterministic = True
-    local_logger.info("Random seed set to %d.", env.SEED)
+    local_logger.info("Random seed set to %d.", env.RANDOM_SEED)
 
     # Initialize loss functions if not provided
     if loss_fns is None:
