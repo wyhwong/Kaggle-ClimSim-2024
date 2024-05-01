@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 import logger
-import utils
 import schemas.visualization as sv
+import utils
 
 
 local_logger = logger.get_logger(__name__)
