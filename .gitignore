@@ -159,10 +159,10 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-*.csv
-*.parquet
-*.feather
-*.h5
-*.hdf5
-*.arrow
-*.pt
+*.csv*
+*.parquet*
+*.feather*
+*.h5*
+*.hdf5*
+*.arrow*
+*.pt*
