@@ -1,5 +1,6 @@
 from typing import Optional
 
+import torch
 from torch import nn
 
 import logger
@@ -57,7 +58,7 @@ class MLP(nn.Module):
                 nn.Linear(640, 368),
             )
 
-    def forward(self, x: nn.Tensor) -> nn.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the model.
 

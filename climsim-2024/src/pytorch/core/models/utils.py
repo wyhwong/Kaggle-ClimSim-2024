@@ -19,10 +19,10 @@ def load_model(model: nn.Module, model_path: str) -> None:
         None
     """
 
-    local_logger.trace(f"Loading model from {model_path}...")
+    local_logger.debug("Loading model from %s...", model_path)
     model.load_state_dict(torch.load(model_path))
     model.eval()
-    local_logger.info(f"Model loaded from {model_path}")
+    local_logger.info("Model loaded from %s.", model_path)
 
 
 def save_weights(model: nn.Module, model_path: str) -> None:
@@ -37,6 +37,6 @@ def save_weights(model: nn.Module, model_path: str) -> None:
         None
     """
 
-    local_logger.trace(f"Saving model weights to {model_path}...")
+    local_logger.debug("Saving model weights to %s...", model_path)
     torch.save(model.state_dict(), model_path)
-    local_logger.info(f"Model weights saved to {model_path}")
+    local_logger.info("Model weights saved to %s.", model_path)

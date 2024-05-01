@@ -17,7 +17,6 @@ class Labels:
     title: str = ""
     xlabel: str = ""
     ylabel: str = ""
-    legend_title: str = ""
 
 
 @dataclass
