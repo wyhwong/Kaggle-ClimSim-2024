@@ -1,9 +1,9 @@
 import os
 
-import logger
+import src.logger
 
 
-local_logger = logger.get_logger(__name__)
+local_logger = src.logger.get_logger(__name__)
 
 
 def check_and_create_dir(dirpath: str) -> None:

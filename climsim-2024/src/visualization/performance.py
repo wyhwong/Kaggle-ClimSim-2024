@@ -1,10 +1,10 @@
 from typing import Optional
 
-import seaborn as sns
 import matplotlib.pyplot as plt
+import seaborn as sns
 
-import visualization.base as base
-import schemas.visualization as sv
+import src.schemas.visualization as sv
+import src.visualization.base as base
 
 
 def loss_curve(

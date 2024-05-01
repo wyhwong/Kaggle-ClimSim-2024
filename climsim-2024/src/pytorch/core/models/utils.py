@@ -7,12 +7,12 @@ import torch
 from torch import nn
 from tqdm import tqdm
 
-import env
-import logger
-import schemas.constants as sc
+import src.env
+import src.logger
+import src.schemas.constants as sc
 
 
-local_logger = logger.get_logger(__name__)
+local_logger = src.logger.get_logger(__name__)
 
 
 def load_model(model: nn.Module, model_path: str) -> None:
@@ -74,10 +74,10 @@ def train(
     """
 
     # Seed reset (for reproducibility)
-    torch.manual_seed(env.RANDOM_SEED)
-    np.random.seed(env.RANDOM_SEED)
+    torch.manual_seed(src.env.RANDOM_SEED)
+    np.random.seed(src.env.RANDOM_SEED)
     torch.backends.cudnn.deterministic = True
-    local_logger.info("Random seed set to %d.", env.RANDOM_SEED)
+    local_logger.info("Random seed set to %d.", src.env.RANDOM_SEED)
 
     # Initialize loss functions if not provided
     if loss_fns is None:
@@ -96,9 +96,9 @@ def train(
 
     training_start = datetime.datetime.now()
     local_logger.info("Start time of training: %s", training_start)
-    local_logger.info("Training using device: %s", env.DEVICE)
+    local_logger.info("Training using device: %s", src.env.DEVICE)
 
-    model.to(env.DEVICE)
+    model.to(src.env.DEVICE)
 
     for epoch in range(1, num_epochs + 1):
         # Logging
@@ -116,8 +116,8 @@ def train(
             epoch_loss = 0.0
             # Iterate over data
             for inputs, outputs in tqdm(dataloaders[phase]):
-                inputs = inputs.to(env.DEVICE)
-                outputs = outputs.to(env.DEVICE)
+                inputs = inputs.to(src.env.DEVICE)
+                outputs = outputs.to(src.env.DEVICE)
 
                 optimizer.zero_grad()
                 with torch.set_grad_enabled(phase is sc.Phase.TRAINING):

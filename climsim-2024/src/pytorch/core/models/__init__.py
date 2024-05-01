@@ -1,1 +1,1 @@
-from pytorch.core.models.mlp import MLP
+from src.pytorch.core.models.mlp import MLP

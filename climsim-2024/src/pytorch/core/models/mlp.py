@@ -3,10 +3,10 @@ from typing import Optional
 import torch
 from torch import nn
 
-import logger
+import src.logger
 
 
-local_logger = logger.get_logger(__name__)
+local_logger = src.logger.get_logger(__name__)
 
 
 class MLP(nn.Module):

@@ -4,14 +4,14 @@ import os
 import sys
 from typing import Optional
 
-import env
+import src.env
 
 
 def get_logger(
     logger_name: str,
-    streaming_log_level: int = env.STREAMING_LOG_LEVEL,
-    file_log_level: int = env.FILE_LOG_LEVEL,
-    log_filepath: Optional[str] = env.LOG_FILEPATH,
+    streaming_log_level: int = src.env.STREAMING_LOG_LEVEL,
+    file_log_level: int = src.env.FILE_LOG_LEVEL,
+    log_filepath: Optional[str] = src.env.LOG_FILEPATH,
 ) -> logging.Logger:
     """
     Get logger with stream and file handlers (if log_filepath is provided)
@@ -29,7 +29,7 @@ def get_logger(
     # Initialize logger object
     logger = logging.getLogger(logger_name)
     logger.setLevel(file_log_level)
-    formatter = logging.Formatter(fmt=env.LOG_FMT, datefmt=env.LOG_DATEFMT)
+    formatter = logging.Formatter(fmt=src.env.LOG_FMT, datefmt=src.env.LOG_DATEFMT)
 
     # Add stream handler to log to console
     stream_handler = logging.StreamHandler(sys.stdout)

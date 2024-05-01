@@ -3,12 +3,12 @@ from typing import Optional
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-import logger
-import schemas.visualization as sv
-import utils
+import src.logger
+import src.schemas.visualization as sv
+import src.utils
 
 
-local_logger = logger.get_logger(__name__)
+local_logger = src.logger.get_logger(__name__)
 
 
 def initialize_plot(
@@ -110,7 +110,7 @@ def savefig_and_close(
     """
 
     if output_dir:
-        utils.check_and_create_dir(dirpath=output_dir)
+        src.utils.check_and_create_dir(dirpath=output_dir)
         savepath = f"{output_dir}/{filename}"
         plt.savefig(savepath, facecolor="w", bbox_inches="tight")
         local_logger.info("Saved figure to %s.", savepath)
