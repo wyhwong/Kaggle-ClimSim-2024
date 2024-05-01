@@ -73,6 +73,11 @@ def train(
         tuple: Model, best weights, loss
     """
 
+    # Seed reset (for reproducibility)
+    torch.manual_seed(env.SEED)
+    np.random.seed(env.SEED)
+    torch.backends.cudnn.deterministic = True
+
     # Initialize loss functions if not provided
     if loss_fns is None:
         loss_fns = {sc.Phase.TRAINING: torch.nn.L1Loss(), sc.Phase.VALIDATION: torch.nn.L1Loss()}
