@@ -11,3 +11,5 @@ LOG_FILEPATH = os.getenv("LOG_FILEPATH", "./runtime.log")
 #       style of analyticks and should not be changed.
 LOG_FMT = "%(asctime)s [%(name)s | %(levelname)s]: %(message)s"
 LOG_DATEFMT = "%Y-%m-%dT%H:%M:%SZ"
+
+DEVICE = os.getenv("DEVICE", "cuda")
