@@ -34,6 +34,7 @@ def output_compressed_parquet(
     inputs_set = df.loc[:, src.schemas.climsim.INPUT_COLUMNS].values
     outputs_set = []
 
+    model.eval()
     # Loop over the inputs
     # This loop is to avoid caching the whole dataset in GPU memory
     for inputs in tqdm(inputs_set):
