@@ -19,7 +19,7 @@ static-code-analysis:
 	poetry run black src --check
 	poetry run pylint src --rcfile ../.pylintrc
 	poetry run isort src --check-only
-	poetry run mypy src --show-error-codes
+	poetry run mypy src --show-error-codes --no-namespace-packages
 
 # Run tests
 test:
