@@ -74,7 +74,7 @@ class DatasetHandler:
 
     def __init__(
         self,
-        dataset: Union[pl.DataFrame, pl.LazyFrame],
+        dataset: pl.LazyFrame,
         input_cols: list[str],
         target_cols: list[str],
         batch_size: int,
@@ -85,7 +85,7 @@ class DatasetHandler:
         Initialize the DatasetHandler
 
         Args:
-            dataset (Union[pl.DataFrame, pl.LazyFrame]): The dataset to be used
+            dataset (pl.LazyFrame): The dataset to be used
             input_cols (list[str]): The input columns
             target_cols (list[str]): The target columns
             batch_size (int): The batch size to be used
@@ -103,18 +103,17 @@ class DatasetHandler:
         self._shuffle = shuffle
         self._train_fraction = train_fraction
 
-        self._trainset, self._valset = self._split_dataset()
-
-    def _sample(self, s: pl.Series) -> pl.Series:
-        """Sampling function for train-val split"""
-
-        # Here we need to reset the random seed for reproducibility
-        # Or else, trainset will vary during training
-        np.random.seed(src.env.RANDOM_SEED)
-        return pl.Series(
-            values=np.random.binomial(1, self._train_fraction, s.len()),
+        n_samples = self.dataset.select(pl.len()).collect().item()
+        self._sampling_series = pl.Series(
+            values=np.random.binomial(1, self._train_fraction, n_samples),
             dtype=pl.Boolean,
         )
+        self._trainset, self._valset = self._split_dataset()
+
+    def _sample(self, _: pl.Series) -> pl.Series:
+        """Sampling function for train-val split"""
+
+        return self._sampling_series
 
     def _split_dataset(self) -> tuple[pl.LazyFrame, pl.LazyFrame]:
         """
@@ -124,13 +123,10 @@ class DatasetHandler:
             tuple[pl.LazyFrame, pl.LazyFrame]: The training and validation datasets
         """
 
-        if isinstance(self.dataset, pl.DataFrame):
-            lf = self.dataset.lazy()
+        if self._shuffle:
+            lf = self.dataset.with_columns(pl.all().shuffle(seed=src.env.RANDOM_SEED))
         else:
             lf = self.dataset
-
-        if self._shuffle:
-            lf = lf.with_columns(pl.all().shuffle(seed=src.env.RANDOM_SEED))
 
         lf = lf.with_columns(pl.first().map_batches(self._sample).alias("_sample"))
         trainset = lf.filter(pl.col("_sample")).drop("_sample")
