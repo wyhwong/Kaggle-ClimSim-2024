@@ -48,14 +48,14 @@ class Dataset(torch.utils.data.Dataset):
 
         return self._lf.select(pl.len()).collect().item()
 
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx: int) -> tuple[np.ndarray, np.ndarray]:
         """Return the data at the given index"""
 
         idx %= self._batch_size
         if idx == 0:
             self._update_batch()
 
-        return self._X[idx], self._y[idx]
+        return (self._X[idx], self._y[idx])
 
     def _update_batch(self) -> None:
         """Get a batch of the dataset"""
