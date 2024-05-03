@@ -1,4 +1,4 @@
-from typing import Iterator, Union
+from typing import Union
 
 import numpy as np
 import polars as pl
@@ -134,7 +134,10 @@ class DatasetHandler:
 
         lf = lf.with_columns(pl.first().map_batches(self._sample).alias("_sample"))
         trainset = lf.filter(pl.col("_sample")).drop("_sample")
-        valset = lf.filter(~pl.col("_sample")).drop("_sample")
+        valset = lf.filter(pl.col("_sample").not_()).drop("_sample")
+
+        local_logger.info("Trainset size: %d", trainset.select(pl.len()).collect().item())
+        local_logger.info("Valset size: %d", valset.select(pl.len()).collect().item())
 
         return (trainset, valset)
 
