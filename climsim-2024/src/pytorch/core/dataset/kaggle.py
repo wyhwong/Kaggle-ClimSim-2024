@@ -22,10 +22,10 @@ def output_compressed_parquet(
     TODO: Replace pandas with polars for better performance.
 
     Args:
-        model: The PyTorch model to use for prediction.
-        df: The input DataFrame.
-        weights: The weights to apply to the output columns.
-        output_dir: The path to the output file.
+        model (nn.Module): The model to be used for inference
+        df (pd.DataFrame): The input data
+        weights (pd.DataFrame): The weights for each output column
+        output_dir (str): The output directory
 
     Returns:
         None
