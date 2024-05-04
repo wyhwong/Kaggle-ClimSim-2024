@@ -46,7 +46,6 @@ class MLP(nn.Module):
         else:
             self.layers = nn.Sequential(
                 nn.Linear(556, 768),
-                nn.LeakyReLU(),
                 nn.Linear(768, 640),
                 nn.LeakyReLU(),
                 nn.Linear(640, 512),
