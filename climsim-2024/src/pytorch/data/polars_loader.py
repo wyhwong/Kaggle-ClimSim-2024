@@ -1,9 +1,12 @@
+from typing import Optional
+
 import numpy as np
 import polars as pl
 import torch
 
 import src.env
 import src.logger
+import src.schemas.math
 
 
 local_logger = src.logger.get_logger(__name__)
@@ -18,6 +21,8 @@ class Dataset(torch.utils.data.Dataset):
         input_cols: list[str],
         target_cols: list[str],
         batch_size: int,
+        sample_every_n: Optional[int] = None,
+        allowed_offset: Optional[src.schemas.math.Domain] = None,
     ) -> None:
         """
         Initialize the Dataset
@@ -27,6 +32,8 @@ class Dataset(torch.utils.data.Dataset):
             input_cols (list[str]): The input columns
             target_cols (list[str]): The target columns
             batch_size (int): The batch size to be used
+            sample_every_n (Optional[int]): The number of samples to skip
+            allowed_offset (Optional[src.schemas.math.Domain]): The allowed offset for the target
 
         Returns:
             None
@@ -36,10 +43,22 @@ class Dataset(torch.utils.data.Dataset):
         self._input_cols = input_cols
         self._target_cols = target_cols
         self._batch_size = batch_size
+        self._sample_every_n = sample_every_n
+        self._allowed_offset = allowed_offset
 
         self._n_updates = 0
         self._X: np.ndarray = np.array([])
         self._y: np.ndarray = np.array([])
+
+        if self._allowed_offset and self._allowed_offset.right > self._sample_every_n:
+            error_msg = "The allowed offset should be less than the sample_every_n"
+            local_logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        if self._allowed_offset:
+            self._offest_fn = lambda: np.random.randint(self._allowed_offset.left, self._allowed_offset.right)
+        else:
+            self._offest_fn = lambda: np.random.randint(0, self._sample_every_n)
 
     def __len__(self) -> int:
         """Return the length of the dataset"""
@@ -58,11 +77,18 @@ class Dataset(torch.utils.data.Dataset):
     def _update_batch(self) -> None:
         """Get a batch of the dataset"""
 
-        samples = (
-            self._lf.with_columns(pl.all().shuffle(seed=src.env.RANDOM_SEED + self._n_updates))
-            .head(self._batch_size)
-            .collect()
-        )
+        if self._sample_every_n:
+            flow = (
+                self._lf.gather_every(self._sample_every_n, self._offest_fn())
+                .with_columns(pl.all().shuffle(seed=src.env.RANDOM_SEED + self._n_updates))
+                .head(self._batch_size)
+            )
+        else:
+            flow = self._lf.with_columns(pl.all().shuffle(seed=src.env.RANDOM_SEED + self._n_updates)).head(
+                self._batch_size
+            )
+
+        samples = flow.collect()
         self._X, self._y = samples[self._input_cols].to_numpy(), samples[self._target_cols].to_numpy()
         self._n_updates += 1
 
