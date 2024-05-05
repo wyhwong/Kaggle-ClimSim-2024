@@ -53,10 +53,11 @@ def save_weights(model: nn.Module, model_path: str) -> None:
 def train(
     model: nn.Module,
     dataloaders: dict[sc.Phase, torch.utils.data.DataLoader],
-    num_epochs: int,
+    n_epochs: int,
     optimizer: Optional[torch.optim.Optimizer] = None,
     scheduler: Optional[torch.optim.lr_scheduler.LRScheduler] = None,
     loss_fns: Optional[dict[sc.Phase, torch.nn.modules.loss._Loss]] = None,
+    validate_every_n_epoch: int = 3,
 ) -> tuple[nn.Module, dict[str, torch.Tensor], dict[sc.Phase, list[float]]]:
     """
     Train model
@@ -68,6 +69,7 @@ def train(
         optimizier (Optional[Optimizer]): Optimizer
         scheduler (Optional[LRScheduler]): Learning rate scheduler
         loss_fns (Optional[dict[Phase, _Loss]]): Loss functions
+        validate_every_n_epoch (int): Validate every n epoch
 
     Returns:
         tuple: Model, best weights, loss
@@ -100,24 +102,30 @@ def train(
 
     model.to(src.env.DEVICE)
 
-    for epoch in range(1, num_epochs + 1):
+    for epoch in range(1, n_epochs + 1):
         # Logging
         local_logger.info("-" * 40)
-        local_logger.info("Epoch %d/%d", epoch, num_epochs)
+        local_logger.info("Epoch %d/%d", epoch, n_epochs)
         local_logger.info("-" * 20)
 
         for phase in [sc.Phase.TRAINING, sc.Phase.VALIDATION]:
             local_logger.debug("The %d-th epoch %s started.", epoch, phase)
             if phase is sc.Phase.TRAINING:
                 model.train()
-            else:
+            elif phase is sc.Phase.VALIDATION and epoch % validate_every_n_epoch == 0:
                 model.eval()
+            else:
+                local_logger.debug("Skipping validation in epoch %d.", epoch)
+                continue
 
             epoch_loss = 0.0
             # Iterate over data
             for inputs, outputs in tqdm(dataloaders[phase]):
-                inputs = inputs.to(src.env.DEVICE)
-                outputs = outputs.to(src.env.DEVICE)
+                # NOTE: Here we comment out the conversion to device
+                #       because the Dataset in parquet.py already
+                #       handles this conversion
+                # inputs = inputs.to(src.env.DEVICE)
+                # outputs = outputs.to(src.env.DEVICE)
 
                 optimizer.zero_grad()
                 with torch.set_grad_enabled(phase is sc.Phase.TRAINING):

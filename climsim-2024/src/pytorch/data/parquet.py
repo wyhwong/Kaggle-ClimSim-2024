@@ -1,10 +1,10 @@
 import threading
 from queue import Queue
+from time import sleep
 
 import numpy as np
 import pyarrow.parquet as pq
 import torch
-import torch.utils
 
 import src.env
 import src.logger
@@ -25,9 +25,11 @@ class Dataset(torch.utils.data.Dataset):
         batch_size: int,
         n_samples: int,
         groups: list[int],
-        n_batch_per_sampling: int = 2,
-        buffer_size: int = 5,
-        num_workers: int = 2,
+        n_batch_per_sampling: int = 3,
+        n_group_per_sampling: int = 2,
+        n_workers: int = 1,
+        buffer_size: int = 10,
+        hold_on_time: float = 0.2,
     ) -> None:
         """
         Initialize the Dataset
@@ -39,7 +41,11 @@ class Dataset(torch.utils.data.Dataset):
             batch_size (int): The batch size to be used
             n_samples (int): The number of samples in the dataset
             groups (list[int]): The groups to be used for sampling
+            n_batch_per_sampling (int): The number of batches to be sampled per group
+            n_group_per_sampling (int): The number of groups to be sampled per iteration
+            n_workers (int): The number of worker threads to be used
             buffer_size (int): The buffer size to be used
+            hold_on_time (float): The time to wait before checking the buffer again (if the buffer is full)
 
         Returns:
             None
@@ -52,45 +58,57 @@ class Dataset(torch.utils.data.Dataset):
         self._n_samples = n_samples
         self._buffer_size = buffer_size
         self._n_batch_per_sampling = n_batch_per_sampling
+        self._n_group_per_sampling = n_group_per_sampling
+        self._hold_on_time = hold_on_time
 
-        self._X: np.ndarray = np.array([])
-        self._y: np.ndarray = np.array([])
+        self._X: torch.Tensor = torch.Tensor([])
+        self._y: torch.Tensor = torch.Tensor([])
         self._get_group_fn = lambda: np.random.choice(groups)
 
-        self._buffer_queue: Queue[tuple[np.ndarray, np.ndarray]] = Queue(maxsize=self._buffer_size)
+        self._buffer_queue: Queue[tuple[torch.Tensor, torch.Tensor]] = Queue(maxsize=self._buffer_size)
+        self._threads = []
 
-        _n_threads = 0
-        while _n_threads < num_workers:
-            _worker_thread = threading.Thread(target=self._load_batches, daemon=True)
-            _worker_thread.start()
-            _n_threads += 1
+        for idx in range(n_workers):
+            self._threads.append(threading.Thread(target=self._load_batches, daemon=True))
+            self._threads[idx].start()
 
     def _load_batches(self) -> None:
         """Load batches in the background and populate the buffer queue"""
 
         while True:
             if self._buffer_queue.full():
+                sleep(self._hold_on_time)
                 continue
 
-            df = self._parquet.read_row_group(self._get_group_fn()).to_pandas()
+            df = self._parquet.read_row_groups(
+                row_groups=[self._get_group_fn() for _ in range(self._n_group_per_sampling)],
+                use_threads=True,
+            ).to_pandas()
+
             for _ in range(self._n_batch_per_sampling):
                 if self._buffer_queue.full():
                     break
 
-                samples = df.sample(self._batch_size)
-                X, y = samples[self._input_cols].values, samples[self._target_cols].values
-                self._buffer_queue.put((X, y))
+                df = df.sample(self._batch_size).reset_index(drop=True)
+                X, y = df[self._input_cols].values, df[self._target_cols].values
+                threading.Thread(target=self._to_gpu, args=(X, y), daemon=True).start()
+
+    def _to_gpu(self, X: np.ndarray, y: np.ndarray) -> None:
+        """Convert the data to GPU tensors"""
+
+        _X, _y = torch.Tensor(X).to(src.env.DEVICE), torch.Tensor(y).to(src.env.DEVICE)
+        self._buffer_queue.put((_X, _y))
 
     def __len__(self) -> int:
         """Return the length of the dataset (unit in batch)"""
 
         return int(self._n_samples / self._batch_size)
 
-    def __getitem__(self, _) -> tuple[np.ndarray, np.ndarray]:
+    def __getitem__(self, _) -> tuple[torch.Tensor, torch.Tensor]:
         """Return the data at the given index from the buffer"""
 
         if self._buffer_queue.empty():
-            local_logger.warning("Buffer queue is empty. Waiting for batches to be loaded...")
+            local_logger.info("Buffer queue is empty. Waiting for batches to be loaded...")
 
         X, y = self._buffer_queue.get()
         return (X, y)
@@ -105,6 +123,5 @@ class Dataset(torch.utils.data.Dataset):
                 batch_size=1,
                 drop_last=False,
             ),
-            pin_memory=True,
             **kwargs,
         )
