@@ -43,42 +43,30 @@ class DynamicNetworkInferface(lightning.LightningModule):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through the model."""
 
-        return self.model.forward(x)
+        return self._model.forward(x)
 
     def training_step(self, batch: torch.Tensor, _) -> torch.Tensor:
         """Training step."""
 
         x, y = batch
-        y_hat = self.model(x)
+        y_hat = self.forward(x.float())
         loss = self._loss_train(y_hat, y)
 
         return loss
 
-    def validation_step(self, batch: torch.Tensor, _) -> torch.Tensor:
+    def validation_step(self, batch: torch.Tensor, _) -> dict[str, torch.Tensor]:
         """Validation step."""
 
         x, y = batch
-        y_hat = self.model(x)
+        y_hat = self._model(x)
         loss = self._loss_val(y_hat, y)
 
-        return loss
+        return {"loss": loss}
 
-    def configure_optimizers(self) -> torch.optim.Optimizer:
+    def configure_optimizers(self):
         """Return the optimizer."""
 
-        if self.optimizer is None:
-            local_logger.info("Optimizer not provided. Using Adam optimizer.")
-            optimizer = torch.optim.Adam(self._model.parameters(), lr=1e-4)
-            return optimizer
+        optimizer = torch.optim.Adam(self._model.parameters(), lr=1e-4)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1)
 
-        return self.optimizer
-
-    def to_trainer(
-        self,
-        train_loader: torch.utils.data.DataLoader,
-        val_loader: torch.utils.data.DataLoader,
-        **kwargs,
-    ) -> lightning.Trainer:
-        """Return a trainer for the model."""
-
-        return lightning.Trainer(self, train_loader, val_loader, **kwargs)
+        return [optimizer], [scheduler]
