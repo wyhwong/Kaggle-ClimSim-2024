@@ -109,40 +109,15 @@ def train(
         local_logger.info("-" * 20)
 
         for phase in [sc.Phase.TRAINING, sc.Phase.VALIDATION]:
-            local_logger.debug("The %d-th epoch %s started.", epoch, phase)
-            if phase is sc.Phase.TRAINING:
-                model.train()
-            elif phase is sc.Phase.VALIDATION and epoch % validate_every_n_epoch == 0:
-                model.eval()
-            else:
-                local_logger.debug("Skipping validation in epoch %d.", epoch)
-                continue
-
-            epoch_loss = 0.0
-            # Iterate over data
-            for inputs, outputs in tqdm(dataloaders[phase]):
-                # NOTE: Here we comment out the conversion to device
-                #       because the Dataset in parquet.py already
-                #       handles this conversion
-                # inputs = inputs.to(src.env.DEVICE)
-                # outputs = outputs.to(src.env.DEVICE)
-
-                optimizer.zero_grad()
-                with torch.set_grad_enabled(phase is sc.Phase.TRAINING):
-                    predictions = model(inputs.float())
-                    _loss = loss_fns[phase](predictions, outputs)
-
-                    if phase is sc.Phase.TRAINING:
-                        _loss.backward()
-                        optimizer.step()
-
-                epoch_loss += _loss.item()
-
-            if scheduler and phase is sc.Phase.TRAINING:
-                scheduler.step()
-                local_logger.info("Last learning rate in this epoch: %.3f", scheduler.get_last_lr()[0])
-
-            local_logger.info("[%s] Loss: %.4f.", phase, epoch_loss)
+            epoch_loss = _compute_epoch_loss_and_update_weights(
+                epoch=epoch,
+                model=model,
+                dataloaders=dataloaders,
+                optimizer=optimizer,
+                loss_fns=loss_fns,
+                validate_every_n_epoch=validate_every_n_epoch,
+                scheduler=scheduler,
+            )
 
             if phase is sc.Phase.VALIDATION and epoch_loss < best_val_loss:
                 local_logger.info("New Record: %.4f < %.4f", epoch_loss, best_val_loss)
@@ -157,3 +132,66 @@ def train(
     local_logger.info("Training complete in %dm %ds.", time_elapsed // 60, time_elapsed % 60)
     local_logger.info("Best val: %.4f}.", best_val_loss)
     return (model, best_weights, loss)
+
+
+def _compute_epoch_loss_and_update_weights(
+    epoch: int,
+    model: nn.Module,
+    dataloaders: dict[sc.Phase, torch.utils.data.DataLoader],
+    optimizer: torch.optim.Optimizer,
+    loss_fns: dict[sc.Phase, torch.nn.modules.loss._Loss],
+    validate_every_n_epoch: int,
+    scheduler: Optional[torch.optim.lr_scheduler.LRScheduler] = None,
+) -> float:
+    """
+    Compute loss and update weights.
+
+    Args:
+        epoch (int): Epoch number
+        model (nn.Module): Model structure
+        dataloaders (dict[Phase, DataLoader]): Data loaders
+        optimizer (Optimizer): Optimizer
+        loss_fns (dict[Phase, _Loss]): Loss functions
+        validate_every_n_epoch (int): Validate every n epoch
+        scheduler (Optional[LRScheduler]): Learning rate scheduler
+
+    Returns:
+        float: Loss
+    """
+
+    for phase in [sc.Phase.TRAINING, sc.Phase.VALIDATION]:
+        local_logger.debug("The %d-th epoch %s started.", epoch, phase)
+        if phase is sc.Phase.TRAINING:
+            model.train()
+        elif phase is sc.Phase.VALIDATION and epoch % validate_every_n_epoch == 0:
+            model.eval()
+        else:
+            local_logger.debug("Skipping validation in epoch %d.", epoch)
+            continue
+
+        epoch_loss = 0.0
+        # Iterate over data
+        for inputs, outputs in tqdm(dataloaders[phase]):
+            # NOTE: Here we comment out the conversion to device
+            #       because the Dataset in parquet.py already
+            #       handles this conversion
+            # inputs = inputs.to(src.env.DEVICE)
+            # outputs = outputs.to(src.env.DEVICE)
+
+            optimizer.zero_grad()
+            with torch.set_grad_enabled(phase is sc.Phase.TRAINING):
+                predictions = model(inputs)
+                _loss = loss_fns[phase](predictions, outputs)
+
+                if phase is sc.Phase.TRAINING:
+                    _loss.backward()
+                    optimizer.step()
+
+            epoch_loss += _loss.item()
+
+        if scheduler and phase is sc.Phase.TRAINING:
+            scheduler.step()
+            local_logger.info("Last learning rate in this epoch: %.3f", scheduler.get_last_lr()[0])
+
+    local_logger.info("[%s] Loss: %.4f.", phase, epoch_loss)
+    return epoch_loss
