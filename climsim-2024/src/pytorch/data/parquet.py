@@ -89,14 +89,15 @@ class Dataset(torch.utils.data.Dataset):
                 if self._buffer_queue.full():
                     break
 
-                df = df.sample(self._batch_size).reset_index(drop=True)
-                X, y = df[self._input_cols].values, df[self._target_cols].values
+                samples = df.sample(self._batch_size).reset_index(drop=True)
+                X, y = samples[self._input_cols].values, samples[self._target_cols].values
                 threading.Thread(target=self._to_gpu, args=(X, y), daemon=True).start()
 
     def _to_gpu(self, X: np.ndarray, y: np.ndarray) -> None:
         """Convert the data to GPU tensors"""
 
-        _X, _y = torch.Tensor(X).to(src.env.DEVICE), torch.Tensor(y).to(src.env.DEVICE)
+        _X = torch.Tensor(X, device=src.env.DEVICE)
+        _y = torch.Tensor(y, device=src.env.DEVICE)
         self._buffer_queue.put((_X, _y))
 
     def __len__(self) -> int:
