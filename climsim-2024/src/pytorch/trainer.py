@@ -70,3 +70,28 @@ class DynamicNetworkInferface(lightning.LightningModule):
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1)
 
         return [optimizer], [scheduler]
+
+
+class DynamicDatamodule(lightning.LightningDataModule):
+    """Dynamic dataloader interface for PyTorch models."""
+
+    def __init__(
+        self,
+        loader_train: torch.utils.data.DataLoader,
+        loader_val: torch.utils.data.DataLoader,
+    ) -> None:
+        """Initialize the dataloader interface."""
+
+        super().__init__()
+        self._loader_train = loader_train
+        self._loader_val = loader_val
+
+    def train_dataloader(self):
+        """Return the training dataloader."""
+
+        return self._loader_train
+
+    def val_dataloader(self):
+        """Return the validation dataloader."""
+
+        return self._loader_val
