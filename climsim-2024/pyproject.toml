@@ -17,8 +17,6 @@ tqdm = "^4.66.2"
 numpy = "^1.26.4"
 pyarrow = "^16.0.0"
 polars = "^0.20.23"
-# TODO: Remove this when we have a better solution
-scikit-learn = "^1.4.2"
 lightning = "^2.2.4"
 
 [tool.poetry.group.dev.dependencies]
