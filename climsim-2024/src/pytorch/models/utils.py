@@ -2,6 +2,7 @@ import datetime
 from copy import deepcopy
 from typing import Optional
 
+import lightning
 import numpy as np
 import torch
 from torch import nn
@@ -15,6 +16,7 @@ import src.schemas.constants as sc
 local_logger = src.logger.get_logger(__name__)
 
 
+# TODO: Refactor this deprecated function
 def load_model(model: nn.Module, model_path: str) -> None:
     """
     Load model from file.
@@ -33,6 +35,7 @@ def load_model(model: nn.Module, model_path: str) -> None:
     local_logger.info("Model loaded from %s.", model_path)
 
 
+# TODO: Refactor this deprecated function
 def save_weights(model: nn.Module, model_path: str) -> None:
     """
     Save model weights to file.
@@ -50,6 +53,7 @@ def save_weights(model: nn.Module, model_path: str) -> None:
     local_logger.info("Model weights saved to %s.", model_path)
 
 
+# TODO: Refactor this deprecated function
 def train(
     model: nn.Module,
     dataloaders: dict[sc.Phase, torch.utils.data.DataLoader],
@@ -134,6 +138,7 @@ def train(
     return (model, best_weights, loss)
 
 
+# TODO: Refactor this deprecated function
 def _compute_epoch_loss_and_update_weights(
     epoch: int,
     model: nn.Module,
@@ -195,3 +200,33 @@ def _compute_epoch_loss_and_update_weights(
 
     local_logger.info("[%s] Loss: %.4f.", phase, epoch_loss)
     return epoch_loss
+
+
+def get_default_trainer(
+    max_epochs: int = 100,
+    max_time: datetime.timedelta = datetime.timedelta(hours=1),
+    check_val_every_n_epoch: int = 3,
+    **kwargs,
+) -> lightning.pytorch.Trainer:
+    """
+    Get the default trainer for the model.
+
+    Args:
+        max_epochs (int): Maximum number of epochs to train
+        max_time (datetime.timedelta): Maximum time to train
+        check_val_every_n_epoch (int): Check validation every n epochs
+        **kwargs: Additional arguments to pass to the trainer
+
+    Returns:
+        lightning.pytorch.Trainer: The trainer object
+    """
+
+    lightning.pytorch.seed_everything(src.env.RANDOM_SEED, workers=True)
+    trainer = lightning.pytorch.Trainer(
+        max_epochs=max_epochs,
+        max_time=max_time,
+        deterministic=True,
+        check_val_every_n_epoch=check_val_every_n_epoch,
+        **kwargs,
+    )
+    return trainer
