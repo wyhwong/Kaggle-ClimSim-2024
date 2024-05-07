@@ -16,7 +16,7 @@ import src.schemas.constants as sc
 local_logger = src.logger.get_logger(__name__)
 
 
-# TODO: Refactor this deprecated function
+# TODO: Remove this deprecated function
 def load_model(model: nn.Module, model_path: str) -> None:
     """
     Load model from file.
@@ -35,7 +35,7 @@ def load_model(model: nn.Module, model_path: str) -> None:
     local_logger.info("Model loaded from %s.", model_path)
 
 
-# TODO: Refactor this deprecated function
+# TODO: Remove this deprecated function
 def save_weights(model: nn.Module, model_path: str) -> None:
     """
     Save model weights to file.
@@ -53,7 +53,7 @@ def save_weights(model: nn.Module, model_path: str) -> None:
     local_logger.info("Model weights saved to %s.", model_path)
 
 
-# TODO: Refactor this deprecated function
+# TODO: Remove this deprecated function
 def train(
     model: nn.Module,
     dataloaders: dict[sc.Phase, torch.utils.data.DataLoader],
@@ -138,7 +138,7 @@ def train(
     return (model, best_weights, loss)
 
 
-# TODO: Refactor this deprecated function
+# TODO: Remove this deprecated function
 def _compute_epoch_loss_and_update_weights(
     epoch: int,
     model: nn.Module,
