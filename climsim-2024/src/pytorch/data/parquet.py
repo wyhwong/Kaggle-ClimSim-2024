@@ -8,7 +8,6 @@ import torch
 
 import src.env
 import src.logger
-import src.schemas.math
 
 
 local_logger = src.logger.get_logger(__name__)
@@ -30,6 +29,7 @@ class Dataset(torch.utils.data.Dataset):
         n_workers: int = 1,
         buffer_size: int = 10,
         hold_on_time: float = 0.2,
+        to_tensor: bool = True,
     ) -> None:
         """
         Initialize the Dataset
@@ -46,6 +46,7 @@ class Dataset(torch.utils.data.Dataset):
             n_workers (int): The number of worker threads to be used
             buffer_size (int): The buffer size to be used
             hold_on_time (float): The time to wait before checking the buffer again (if the buffer is full)
+            to_gpu (bool): Whether to convert the data to GPU tensors
 
         Returns:
             None
@@ -60,12 +61,15 @@ class Dataset(torch.utils.data.Dataset):
         self._n_batch_per_sampling = n_batch_per_sampling
         self._n_group_per_sampling = n_group_per_sampling
         self._hold_on_time = hold_on_time
+        self._shutdown_event = threading.Event()
+        self._to_tensor = to_tensor
 
         self._X: torch.Tensor = torch.Tensor([])
         self._y: torch.Tensor = torch.Tensor([])
         self._get_group_fn = lambda: np.random.choice(groups)
 
-        self._buffer_queue: Queue[tuple[torch.Tensor, torch.Tensor]] = Queue(maxsize=self._buffer_size)
+        self._buffer_queue: Queue[tuple[np.ndarray, np.ndarray]] = Queue(maxsize=self._buffer_size)
+        self._gpu_buffer_queue: Queue[tuple[torch.Tensor, torch.Tensor]] = Queue(maxsize=self._buffer_size)
         self._threads = []
 
         for idx in range(n_workers):
@@ -80,6 +84,9 @@ class Dataset(torch.utils.data.Dataset):
                 sleep(self._hold_on_time)
                 continue
 
+            if self._shutdown_event.is_set():
+                break
+
             df = self._parquet.read_row_groups(
                 row_groups=[self._get_group_fn() for _ in range(self._n_group_per_sampling)],
                 use_threads=True,
@@ -89,29 +96,42 @@ class Dataset(torch.utils.data.Dataset):
                 if self._buffer_queue.full():
                     break
 
-                df = df.sample(self._batch_size).reset_index(drop=True)
-                X, y = df[self._input_cols].values, df[self._target_cols].values
-                threading.Thread(target=self._to_gpu, args=(X, y), daemon=True).start()
+                samples = df.sample(self._batch_size).reset_index(drop=True)
+                X, y = samples[self._input_cols].values, samples[self._target_cols].values
+                if self._to_tensor:
+                    threading.Thread(target=self._to_gpu, args=(X, y), daemon=True).start()
+                else:
+                    self._buffer_queue.put((X, y))
 
     def _to_gpu(self, X: np.ndarray, y: np.ndarray) -> None:
         """Convert the data to GPU tensors"""
 
-        _X, _y = torch.Tensor(X).to(src.env.DEVICE), torch.Tensor(y).to(src.env.DEVICE)
-        self._buffer_queue.put((_X, _y))
+        _X = torch.Tensor(X).to(src.env.DEVICE)
+        _y = torch.Tensor(y).to(src.env.DEVICE)
+        self._gpu_buffer_queue.put((_X, _y))
 
     def __len__(self) -> int:
         """Return the length of the dataset (unit in batch)"""
 
         return int(self._n_samples / self._batch_size)
 
-    def __getitem__(self, _) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, _) -> tuple[torch.Tensor, torch.Tensor] | tuple[np.ndarray, np.ndarray]:
         """Return the data at the given index from the buffer"""
 
         if self._buffer_queue.empty():
             local_logger.info("Buffer queue is empty. Waiting for batches to be loaded...")
 
-        X, y = self._buffer_queue.get()
-        return (X, y)
+        if self._to_tensor:
+            return self._gpu_buffer_queue.get()
+
+        return self._buffer_queue.get()
+
+    def shutdown(self) -> None:
+        """Shutdown the threads"""
+
+        self._shutdown_event.set()
+        for thread in self._threads:
+            thread.join()
 
     def to_dataloader(self, **kwargs) -> torch.utils.data.DataLoader:
         """Return a torch DataLoader object"""

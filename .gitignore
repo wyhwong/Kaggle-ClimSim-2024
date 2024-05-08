@@ -166,3 +166,4 @@ cython_debug/
 *.hdf5*
 *.arrow*
 *.pt*
+lightning_logs/
