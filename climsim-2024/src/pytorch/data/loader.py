@@ -19,15 +19,10 @@ class Loadermodule(lightning.LightningDataModule):
         Initialize the dataloader interface.
 
         Args:
-        -----
-            loader_train (torch.utils.data.DataLoader):
-                Training dataloader
-
-            loader_val (torch.utils.data.DataLoader):
-                Validation dataloader
+            loader_train (torch.utils.data.DataLoader): Training dataloader
+            loader_val (torch.utils.data.DataLoader): Validation dataloader
 
         Returns:
-        -----
             None
         """
 
