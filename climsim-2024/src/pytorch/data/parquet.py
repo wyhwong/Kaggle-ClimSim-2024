@@ -3,7 +3,6 @@ from queue import Queue
 from time import sleep
 
 import numpy as np
-
 import polars as pl
 import pyarrow.parquet as pq
 import torch
