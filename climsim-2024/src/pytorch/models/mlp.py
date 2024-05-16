@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Callable, Optional
 
 import lightning
 import torch
@@ -80,8 +80,8 @@ class DynamicMLP(lightning.LightningModule):
     def __init__(
         self,
         layers: Optional[nn.Sequential] = None,
-        loss_train: Optional[nn.modules.loss._Loss] = None,
-        loss_val: Optional[nn.modules.loss._Loss] = None,
+        loss_train: Optional[Callable] = None,
+        loss_val: Optional[Callable] = None,
         optimizers: Optional[list[torch.optim.Optimizer]] = None,
         schedulers: Optional[list[torch.optim.lr_scheduler.LRScheduler]] = None,
     ) -> None:
@@ -137,7 +137,7 @@ class DynamicMLP(lightning.LightningModule):
             torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1) for optimizer in self._optimizers
         ]
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the model.
 
@@ -148,7 +148,7 @@ class DynamicMLP(lightning.LightningModule):
             torch.Tensor: Output tensor
         """
 
-        return self._layers(x)
+        return self._layers(X)
 
     def training_step(
         self,
@@ -157,10 +157,12 @@ class DynamicMLP(lightning.LightningModule):
     ) -> torch.Tensor:
         """Training step."""
 
-        x, y = batch
-        y_hat = self.forward(x)
+        X_in_batches, y_in_batches = batch
+        X, y = X_in_batches[0], y_in_batches[0]
+        y_hat = self.forward(X)
         loss = self._loss_train(y_hat, y)
 
+        local_logger.debug("Training loss: %4f", loss)
         self.log("train_loss", loss)
         return loss
 
@@ -171,10 +173,12 @@ class DynamicMLP(lightning.LightningModule):
     ) -> torch.Tensor:
         """Validation step."""
 
-        x, y = batch
-        y_hat = self.forward(x)
+        X_in_batches, y_in_batches = batch
+        X, y = X_in_batches[0], y_in_batches[0]
+        y_hat = self.forward(X)
         loss = self._loss_val(y_hat, y)
 
+        local_logger.debug("Validation loss: %4f", loss)
         self.log("val_loss", loss)
         return loss
 
