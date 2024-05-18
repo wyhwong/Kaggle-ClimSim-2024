@@ -48,7 +48,7 @@ class WorkerPool:
 
         local_logger.debug("All worker threads have been started.")
 
-    def shutdown_workers(self, timeout: Optional[int] = None) -> None:
+    def shutdown_workers(self, timeout: Optional[float] = None) -> None:
         """Shutdown all the worker threads"""
 
         local_logger.debug("Shutting down all worker threads...")

@@ -125,7 +125,7 @@ class Dataset(torch.utils.data.Dataset):
         """Shutdown the threads"""
 
         self._shutdown_event.set()
-        self._worker_pool.shutdown_workers()
+        self._worker_pool.shutdown_workers(1.0)
 
     def _get_rows_group(self, size: int) -> np.ndarray:
         """Return a random group"""
@@ -164,7 +164,7 @@ class Dataset(torch.utils.data.Dataset):
         while True:
             if self._shutdown_event.is_set():
                 local_logger.debug("Event has been set. Shutting down the worker...")
-                _pool.shutdown_workers(1)
+                _pool.shutdown_workers()
                 return
 
             df = self._parquet.read_row_groups(
