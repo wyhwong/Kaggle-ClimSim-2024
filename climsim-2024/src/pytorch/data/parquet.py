@@ -5,7 +5,6 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-import polars as pl
 import pyarrow.parquet as pq
 import torch
 
@@ -73,25 +72,8 @@ class Dataset(torch.utils.data.Dataset):
         self._normalize = normalize
 
         self._n_samples = sum([self._parquet.metadata.row_group(g).num_rows for g in self._groups])
-        # Get some metadata from the source
-        lf = pl.scan_parquet(source)
-        # Get the number of samples (to calculate the length of the dataset)
-        self._n_samples = lf.select(pl.len()).collect().item()
-        if self._normalize:
-            # Normalization for X
-            self._X_min = np.array([lf.select(pl.min(col)).collect().item() for col in self._input_cols])
-            self._X_scaling = (
-                np.array([lf.select(pl.max(col)).collect().item() for col in self._input_cols]) - self._X_min
-            )
-            self._X_scaling[self._X_scaling == 0] = 1.0
-            # Normalization for y
-            self._y_min = np.array([lf.select(pl.min(col)).collect().item() for col in self._target_cols])
-            self._y_scaling = (
-                np.array([lf.select(pl.max(col)).collect().item() for col in self._target_cols]) - self._y_min
-            )
-            self._y_scaling[self._y_scaling == 0] = 1.0
-        else:
-            self._X_min = self._X_scaling = self._y_min = self._y_scaling = np.array([])
+        self._X_min = self._X_scaling = self._y_min = self._y_scaling = np.array([])
+        self._init_scaling()
 
         self._shutdown_event = threading.Event()
         self._worker_pool = src.core.workerpool.WorkerPool()
@@ -126,6 +108,45 @@ class Dataset(torch.utils.data.Dataset):
 
         self._shutdown_event.set()
         self._worker_pool.shutdown_workers(1.0)
+
+    def clean_up(self) -> None:
+        """Clean up the resources"""
+
+        self._np_buffer.queue.clear()
+        self._tensor_buffer.queue.clear()
+
+    def _init_scaling(self) -> None:
+        """
+        Get the scaling values for normalization
+
+        NOTE: This function read the metadata of the source file to get the max and min values.
+              It therefore is much faster than polars,
+              which go through the whole file to get the max and min values.
+        """
+
+        cols = self._input_cols + self._target_cols
+        max_values = {col: -np.inf for col in cols}
+        min_values = {col: np.inf for col in cols}
+
+        # Go through metadata of each row group to get the max and min values
+        for row_group in range(self._parquet.num_row_groups):
+            meta = self._parquet.metadata.row_group(row_group)
+            for idx in range(meta.num_columns):
+                col_meta = meta.column(idx)
+                col = col_meta.path_in_schema
+                if col in cols:
+                    max_values[col] = max(max_values[col], col_meta.statistics.max)
+                    min_values[col] = min(min_values[col], col_meta.statistics.min)
+
+        ds_min, ds_max = pd.Series(min_values), pd.Series(max_values)
+
+        self._X_min = ds_min[self._input_cols].values
+        self._X_scaling = ds_max[self._input_cols].values - self._X_min
+        self._X_scaling[self._X_scaling == 0] = 1.0
+
+        self._y_min = ds_min[self._target_cols].values
+        self._y_scaling = ds_max[self._target_cols].values - self._y_min
+        self._y_scaling[self._y_scaling == 0] = 1.0
 
     def _get_rows_group(self, size: int) -> np.ndarray:
         """Return a random group"""
