@@ -1,6 +1,7 @@
 from typing import Optional
 
 import matplotlib.pyplot as plt
+import pandas as pd
 import seaborn as sns
 
 import src.schemas.visualization as sv
@@ -8,7 +9,7 @@ import src.visualization.base as base
 
 
 def loss_curve(
-    loss: dict[str, list[float]],
+    losses: list[pd.Series],
     filename: Optional[str] = None,
     output_dir: Optional[str] = None,
     close=True,
@@ -17,7 +18,7 @@ def loss_curve(
     Plots the training/validation loss curve against the number of epochs.
 
     Args:
-        loss (dict[str, list[float]]): Training/Validation loss
+        losses (list[pd.Series]): List of training/validation loss
         filename (str): Filename
         output_dir (str): Output directory
         close (bool): Close figure
@@ -32,6 +33,8 @@ def loss_curve(
         ylabel="Training/Validation Loss",
     )
     fig, ax = base.initialize_plot(figsize=(10, 10), labels=labels)
-    sns.lineplot(data=loss, ax=ax)
+    for ds_loss in losses:
+        sns.lineplot(data=ds_loss, ax=ax)
+    ax.set(ylabel="", xlabel="")
     base.savefig_and_close(filename, output_dir, close)
     return (fig, ax)

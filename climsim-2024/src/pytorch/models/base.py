@@ -35,6 +35,12 @@ class ModelBase(lightning.LightningModule, ABC):
         self._loss_train = loss_train or nn.functional.mse_loss
         self._loss_val = loss_val or nn.functional.mse_loss
 
+        self._batch_loss_train: list[float] = []
+        self._batch_loss_val: list[float] = []
+
+        self._epoch_loss_train: dict[int, float] = {}
+        self._epoch_loss_val: dict[int, float] = {}
+
     def __post_init__(self) -> None:
         """Post initialization."""
 
@@ -52,6 +58,11 @@ class ModelBase(lightning.LightningModule, ABC):
 
         self._optimizers = optimizers
         self._schedulers = schedulers
+
+    def get_epoch_loss(self) -> tuple[dict[int, float], dict[int, float]]:
+        """Get the epoch loss."""
+
+        return self._epoch_loss_train, self._epoch_loss_val
 
     @abstractmethod
     def forward(self, X: torch.Tensor) -> torch.Tensor:
@@ -75,11 +86,20 @@ class ModelBase(lightning.LightningModule, ABC):
         _X, _y = batch
         X, y = _X[0], _y[0]
         y_hat = self.forward(X)
-        loss = self._loss_train(y_hat, y)
+        batch_loss = self._loss_train(y_hat, y)
 
-        local_logger.debug("Training loss: %4f", loss)
-        self.log("train_loss", loss)
-        return loss
+        self._batch_loss_train.append(batch_loss.detach().cpu().numpy())
+        self.log("train_loss", batch_loss)
+        return batch_loss
+
+    def on_train_epoch_end(self) -> None:
+        """Called at the end of the training epoch."""
+
+        epoch_loss = sum(self._batch_loss_train) / len(self._batch_loss_train)
+        self._epoch_loss_train[self.current_epoch] = epoch_loss
+        self._batch_loss_train.clear()
+
+        local_logger.info("Epoch %d - Training Loss: %.4f", self.current_epoch, epoch_loss)
 
     def validation_step(
         self,
@@ -91,11 +111,20 @@ class ModelBase(lightning.LightningModule, ABC):
         _X, _y = batch
         X, y = _X[0], _y[0]
         y_hat = self.forward(X)
-        loss = self._loss_val(y_hat, y)
+        batch_loss = self._loss_val(y_hat, y)
 
-        local_logger.debug("Validation loss: %4f", loss)
-        self.log("val_loss", loss)
-        return loss
+        self._batch_loss_val.append(batch_loss.detach().cpu().numpy())
+        self.log("val_loss", batch_loss)
+        return batch_loss
+
+    def on_validation_epoch_end(self) -> None:
+        """Called at the end of the validation epoch."""
+
+        epoch_loss = sum(self._batch_loss_val) / len(self._batch_loss_val)
+        self._epoch_loss_val[self.current_epoch] = epoch_loss
+        self._batch_loss_val.clear()
+
+        local_logger.info("Epoch %d - Validation Loss: %.4f", self.current_epoch, epoch_loss)
 
     def configure_optimizers(self) -> tuple[list[torch.optim.Optimizer], list[torch.optim.lr_scheduler.LRScheduler]]:
         """Return the optimizer."""
