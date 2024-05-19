@@ -6,7 +6,7 @@ import src.logger
 local_logger = src.logger.get_logger(__name__)
 
 
-def r2_score_multivariate(predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+def r2_score_multivariate(y_hat: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     """
     Calculate the R2 score for multivariate targets.
 
@@ -18,11 +18,11 @@ def r2_score_multivariate(predictions: torch.Tensor, targets: torch.Tensor) -> t
         torch.Tensor: The R2 score.
     """
 
-    mean_targets = torch.mean(targets, dim=0)
+    mean_targets = torch.mean(y, dim=0)
 
-    ss_total = torch.sum(targets - mean_targets, dim=0)
+    ss_total = torch.sum(y - mean_targets, dim=0)
     ss_total[ss_total == 0] = 1.0
-    ss_residual = torch.sum(targets - predictions, dim=0)
+    ss_residual = torch.sum(y - y_hat, dim=0)
 
     uni_r2 = 1.0 - torch.square(ss_residual / ss_total)
     r2 = torch.nanmean(uni_r2[torch.isfinite(uni_r2)])

@@ -27,6 +27,7 @@ class Loadermodule(lightning.LightningDataModule):
         """
 
         super().__init__()
+
         self._loader_train = loader_train
         self._loader_val = loader_val
 

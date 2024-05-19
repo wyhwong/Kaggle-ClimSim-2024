@@ -1,80 +1,16 @@
 from typing import Callable, Optional
 
-import lightning
 import torch
 from torch import nn
 
 import src.logger
+from src.pytorch.models.base import ModelBase
 
 
 local_logger = src.logger.get_logger(__name__)
 
 
-# TODO: Remove deprecated version of MLP model
-class MLP(nn.Module):
-    """Multilayer perceptron model for regression."""
-
-    def __init__(self, layers: Optional[nn.Sequential] = None) -> None:
-        """
-        Initialize a multilayer perceptron model for regression.
-        NOTE: If layers is not provided, the default layers are used.
-              For default, we have the baseline MLP model in the paper.
-              The layer content are:
-                - Input layer: 556 neurons (Input features of ClimSim Dataset)
-                - Activation function: LeakyReLU
-                - Hidden layer 1: 768 neurons
-                - Activation function: LeakyReLU
-                - Hidden layer 2: 640 neurons
-                - Activation function: LeakyReLU
-                - Hidden layer 3: 512 neurons
-                - Activation function: LeakyReLU
-                - Hidden layer 4: 640 neurons
-                - Activation function: LeakyReLU
-                - Hidden layer 5: 640 neurons
-                - Activation function: LeakyReLU
-                - Output layer: 368 neuron (Output target of ClimSim Dataset)
-
-        Args:
-            layers (Optional[nn.Sequential]): Custom layers for the model
-
-        Returns:
-            None
-        """
-
-        super().__init__()
-
-        if layers is not None:
-            self.layers = layers
-        else:
-            self.layers = nn.Sequential(
-                nn.Linear(556, 768),
-                nn.LeakyReLU(),
-                nn.Linear(768, 640),
-                nn.LeakyReLU(),
-                nn.Linear(640, 512),
-                nn.LeakyReLU(),
-                nn.Linear(512, 640),
-                nn.LeakyReLU(),
-                nn.Linear(640, 640),
-                nn.LeakyReLU(),
-                nn.Linear(640, 368),
-            )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass of the model.
-
-        Args:
-            x (nn.Tensor): Input tensor
-
-        Returns:
-            nn.Tensor: Output tensor
-        """
-
-        return self.layers(x)
-
-
-class DynamicMLP(lightning.LightningModule):
+class DynamicMLP(ModelBase):
     """Multilayer perceptron model for regression."""
 
     def __init__(
@@ -82,8 +18,6 @@ class DynamicMLP(lightning.LightningModule):
         layers: Optional[nn.Sequential] = None,
         loss_train: Optional[Callable] = None,
         loss_val: Optional[Callable] = None,
-        optimizers: Optional[list[torch.optim.Optimizer]] = None,
-        schedulers: Optional[list[torch.optim.lr_scheduler.LRScheduler]] = None,
     ) -> None:
         """
         Initialize a multilayer perceptron model for regression.
@@ -108,14 +42,15 @@ class DynamicMLP(lightning.LightningModule):
             layers (Optional[nn.Sequential]): Custom layers for the model
             loss_train (Optional[nn.modules.loss._Loss]): Loss function for training
             loss_val (Optional[nn.modules.loss._Loss]): Loss function for validation
-            optimizers (Optional[list[torch.optim.Optimizer]]): Optimizers for the model
-            schedulers (Optional[list[torch.optim.lr_scheduler.LRScheduler]]): Learning rate schedulers
 
         Returns:
             None
         """
 
-        super().__init__()
+        super().__init__(
+            loss_train=loss_train,
+            loss_val=loss_val,
+        )
 
         self._layers = layers or nn.Sequential(
             nn.Linear(556, 768),
@@ -130,12 +65,8 @@ class DynamicMLP(lightning.LightningModule):
             nn.LeakyReLU(),
             nn.Linear(640, 368),
         )
-        self._loss_train = loss_train or nn.functional.mse_loss
-        self._loss_val = loss_val or nn.functional.mse_loss
-        self._optimizers = optimizers or [torch.optim.Adam(self.parameters(), lr=1e-4)]
-        self._scheduler = schedulers or [
-            torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1) for optimizer in self._optimizers
-        ]
+
+        super().__post_init__()
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         """
@@ -149,40 +80,3 @@ class DynamicMLP(lightning.LightningModule):
         """
 
         return self._layers(X)
-
-    def training_step(
-        self,
-        batch: torch.Tensor,
-        batch_idx: int,  # pylint: disable=unused-argument
-    ) -> torch.Tensor:
-        """Training step."""
-
-        X_in_batches, y_in_batches = batch
-        X, y = X_in_batches[0], y_in_batches[0]
-        y_hat = self.forward(X)
-        loss = self._loss_train(y_hat, y)
-
-        local_logger.debug("Training loss: %4f", loss)
-        self.log("train_loss", loss)
-        return loss
-
-    def validation_step(
-        self,
-        batch: torch.Tensor,
-        batch_idx: int,  # pylint: disable=unused-argument
-    ) -> torch.Tensor:
-        """Validation step."""
-
-        X_in_batches, y_in_batches = batch
-        X, y = X_in_batches[0], y_in_batches[0]
-        y_hat = self.forward(X)
-        loss = self._loss_val(y_hat, y)
-
-        local_logger.debug("Validation loss: %4f", loss)
-        self.log("val_loss", loss)
-        return loss
-
-    def configure_optimizers(self) -> tuple[list[torch.optim.Optimizer], list[torch.optim.lr_scheduler.LRScheduler]]:
-        """Return the optimizer."""
-
-        return self._optimizers, self._scheduler

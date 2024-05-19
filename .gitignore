@@ -167,3 +167,4 @@ cython_debug/
 *.arrow*
 *.pt*
 lightning_logs/
+*.ckpt
