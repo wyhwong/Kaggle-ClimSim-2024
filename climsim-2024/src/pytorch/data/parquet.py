@@ -1,4 +1,6 @@
+import concurrent.futures
 import threading
+from concurrent.futures import ThreadPoolExecutor, wait
 from queue import Queue
 from time import sleep
 from typing import Optional
@@ -8,7 +10,6 @@ import pandas as pd
 import pyarrow.parquet as pq
 import torch
 
-import src.core.workerpool
 import src.env
 import src.logger
 
@@ -25,7 +26,6 @@ class Dataset(torch.utils.data.Dataset):
         input_cols: list[str],
         target_cols: list[str],
         batch_size: int = 3072,
-        n_workers: int = 1,
         buffer_size: int = 10,  # 10 batches
         hold_on_time: float = 0.2,  # 0.2 seconds
         groups: Optional[list[int]] = None,
@@ -42,7 +42,6 @@ class Dataset(torch.utils.data.Dataset):
             input_cols (list[str]): The input columns
             target_cols (list[str]): The target columns
             batch_size (int): The batch size to be used
-            n_workers (int): The number of worker threads to be used
             buffer_size (int): The buffer size to be used
             hold_on_time (float): The time to wait before checking the buffer again (if the buffer is full)
             groups (list[int]): The groups to be used for sampling
@@ -65,7 +64,6 @@ class Dataset(torch.utils.data.Dataset):
         self._n_batch_per_sampling = n_batch_per_sampling or 1
         # If n_group_per_sampling is not provided, use all the groups
         self._n_group_per_sampling = n_group_per_sampling or self._parquet.num_row_groups
-        self._n_workers = n_workers
         self._buffer_size = buffer_size
         self._hold_on_time = hold_on_time
         self._to_tensor = to_tensor
@@ -76,7 +74,8 @@ class Dataset(torch.utils.data.Dataset):
         self._init_scaling()
 
         self._shutdown_event = threading.Event()
-        self._worker_pool = src.core.workerpool.WorkerPool()
+        self._lock = threading.Lock()
+        self._sampling_thread = threading.Thread(target=self._worker_fn, daemon=True)
         self._np_buffer: Queue[tuple[np.ndarray, np.ndarray]] = Queue(maxsize=self._buffer_size)
         self._tensor_buffer: Queue[tuple[torch.Tensor, torch.Tensor]] = Queue(maxsize=self._buffer_size)
 
@@ -99,15 +98,15 @@ class Dataset(torch.utils.data.Dataset):
     def start_workers(self) -> None:
         """Start the worker threads"""
 
-        for _ in range(self._n_workers):
-            worker = threading.Thread(target=self._worker_fn, daemon=True)
-            self._worker_pool.add_worker(worker=worker, start=True)
+        with self._lock:
+            self._sampling_thread.start()
 
     def shutdown_workers(self) -> None:
         """Shutdown the threads"""
 
         self._shutdown_event.set()
-        self._worker_pool.shutdown_workers(1.0)
+        with self._lock:
+            self._sampling_thread.join(timeout=1.0)
 
     def clean_up(self) -> None:
         """Clean up the resources"""
@@ -180,17 +179,20 @@ class Dataset(torch.utils.data.Dataset):
     def _worker_fn(self) -> None:
         """Load batches in the background and populate the buffer queue"""
 
-        _pool = src.core.workerpool.WorkerPool()
+        _pool = ThreadPoolExecutor(max_workers=self._n_batch_per_sampling)
+        futures: list[concurrent.futures._base.Future] = []
 
         while True:
             if self._shutdown_event.is_set():
                 local_logger.debug("Event has been set. Shutting down the worker...")
-                _pool.shutdown_workers()
+                _pool.shutdown(wait=True)
                 return
 
             df = self._parquet.read_row_groups(
                 row_groups=self._get_rows_group(self._n_group_per_sampling),
             ).to_pandas()
+            wait(futures)
+            futures.clear()
 
             for _ in range(self._n_batch_per_sampling):
                 if self._shutdown_event.is_set():
@@ -203,12 +205,10 @@ class Dataset(torch.utils.data.Dataset):
                 X, y = self._sample_from_df(df=df)
 
                 if self._to_tensor:
-                    worker = threading.Thread(target=self._put_batch_to_tensor_buffer, args=(X, y), daemon=True)
-                    _pool.add_worker(worker=worker, start=True)
+                    futures.append(_pool.submit(self._put_batch_to_tensor_buffer, X, y))
                 else:
                     self._np_buffer.put((X, y))
 
-            _pool.shutdown_workers()
             local_logger.debug("Cleaned up for sampling, waiting for the next iteration...")
 
     def to_dataloader(self, **kwargs) -> torch.utils.data.DataLoader:
