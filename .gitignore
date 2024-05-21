@@ -168,3 +168,6 @@ cython_debug/
 *.pt*
 lightning_logs/
 *.ckpt
+
+# Runtime logs
+**/*.log.*
