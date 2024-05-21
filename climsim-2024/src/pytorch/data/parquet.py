@@ -7,6 +7,7 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
+import psutil
 import pyarrow.parquet as pq
 import torch
 
@@ -198,9 +199,11 @@ class Dataset(torch.utils.data.Dataset):
                 if self._shutdown_event.is_set():
                     break
 
-                if self._np_buffer.full():
+                while psutil.virtual_memory().percent > 90.0:
                     sleep(self._hold_on_time)
-                    continue
+
+                while self._np_buffer.full() or self._tensor_buffer.full():
+                    sleep(self._hold_on_time)
 
                 X, y = self._sample_from_df(df=df)
 
@@ -209,6 +212,7 @@ class Dataset(torch.utils.data.Dataset):
                 else:
                     self._np_buffer.put((X, y))
 
+            del df
             local_logger.debug("Cleaned up for sampling, waiting for the next iteration...")
 
     def to_dataloader(self, **kwargs) -> torch.utils.data.DataLoader:
