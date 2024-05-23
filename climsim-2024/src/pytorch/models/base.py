@@ -44,9 +44,9 @@ class ModelBase(lightning.LightningModule, ABC):
     def __post_init__(self) -> None:
         """Post initialization."""
 
-        self._optimizers: list[torch.optim.Optimizer] = [torch.optim.Adam(self.parameters(), lr=1e-4)]
+        self._optimizers: list[torch.optim.Optimizer] = [torch.optim.Adam(self.parameters(), lr=1e-2)]
         self._schedulers: list[torch.optim.lr_scheduler.LRScheduler] = [
-            torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1) for optimizer in self._optimizers
+            torch.optim.lr_scheduler.StepLR(optimizer, step_size=1000, gamma=0.1) for optimizer in self._optimizers
         ]
 
     def replace_optimizers(
@@ -99,6 +99,7 @@ class ModelBase(lightning.LightningModule, ABC):
         self._epoch_loss_train[self.current_epoch] = epoch_loss
         self._batch_loss_train.clear()
 
+        self.log("train_epoch_loss", epoch_loss)
         local_logger.info("Epoch %d - Training Loss: %.4f", self.current_epoch, epoch_loss)
 
     def validation_step(
@@ -124,6 +125,7 @@ class ModelBase(lightning.LightningModule, ABC):
         self._epoch_loss_val[self.current_epoch] = epoch_loss
         self._batch_loss_val.clear()
 
+        self.log("val_epoch_loss", epoch_loss)
         local_logger.info("Epoch %d - Validation Loss: %.4f", self.current_epoch, epoch_loss)
 
     def configure_optimizers(self) -> tuple[list[torch.optim.Optimizer], list[torch.optim.lr_scheduler.LRScheduler]]:
