@@ -30,3 +30,18 @@ def r2_score_multivariate(y_hat: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     local_logger.debug("R2 computed: %4f, n_dim: %s", r2, uni_r2.shape)
 
     return r2
+
+
+def r2_loss(y_hat: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """
+    Calculate the R2 loss.
+
+    Args:
+        y_hat (torch.Tensor): The predicted targets.
+        y (torch.Tensor): The ground truth targets.
+
+    Returns:
+        torch.Tensor: The R2 loss.
+    """
+
+    return r2_score_multivariate(y_hat, y) * -1.0
