@@ -44,9 +44,9 @@ class ModelBase(lightning.LightningModule, ABC):
     def __post_init__(self) -> None:
         """Post initialization."""
 
-        self._optimizers: list[torch.optim.Optimizer] = [torch.optim.Adam(self.parameters(), lr=1e-2)]
+        self._optimizers: list[torch.optim.Optimizer] = [torch.optim.Adam(self.parameters(), lr=1e-3)]
         self._schedulers: list[torch.optim.lr_scheduler.LRScheduler] = [
-            torch.optim.lr_scheduler.StepLR(optimizer, step_size=1000, gamma=0.1) for optimizer in self._optimizers
+            torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.1) for optimizer in self._optimizers
         ]
 
     def replace_optimizers(

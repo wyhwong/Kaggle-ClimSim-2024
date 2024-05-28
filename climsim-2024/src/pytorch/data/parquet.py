@@ -71,12 +71,13 @@ class Dataset(torch.utils.data.Dataset):
         self._normalize = normalize
 
         self._n_samples = sum([self._parquet.metadata.row_group(g).num_rows for g in self._groups])
+        self._max_idx = self.__len__() - 1
         self._X_min = self._X_scaling = self._y_min = self._y_scaling = np.array([])
         self._init_scaling()
 
         self._shutdown_event = threading.Event()
         self._lock = threading.Lock()
-        self._sampling_thread = threading.Thread(target=self._worker_fn, daemon=True)
+        self._sampling_thread = threading.Thread(target=lambda: None)
         self._np_buffer: Queue[tuple[np.ndarray, np.ndarray]] = Queue(maxsize=self._buffer_size)
         self._tensor_buffer: Queue[tuple[torch.Tensor, torch.Tensor]] = Queue(maxsize=self._buffer_size)
 
@@ -85,11 +86,16 @@ class Dataset(torch.utils.data.Dataset):
 
         return int(self._n_samples / self._batch_size)
 
-    def __getitem__(self, _) -> tuple[torch.Tensor, torch.Tensor] | tuple[np.ndarray, np.ndarray]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor] | tuple[np.ndarray, np.ndarray]:
         """Return the data at the given index from the buffer"""
 
-        if self._np_buffer.empty():
-            local_logger.info("Buffer queue is empty. Waiting for batches to be loaded...")
+        if idx == self._max_idx:
+            local_logger.info("One epoch ended, Restarting the sampling thread...")
+            self.shutdown_workers()
+            self.start_workers()
+
+        if self._np_buffer.empty() or self._tensor_buffer.empty():
+            local_logger.debug("Buffer queue is empty. Waiting for batches to be loaded...")
 
         if self._to_tensor:
             return self._tensor_buffer.get()
@@ -99,15 +105,21 @@ class Dataset(torch.utils.data.Dataset):
     def start_workers(self) -> None:
         """Start the worker threads"""
 
-        with self._lock:
-            self._sampling_thread.start()
+        self._lock.acquire()
+        self._shutdown_event = threading.Event()
+        self._sampling_thread = threading.Thread(target=self._worker_fn)
+        self._sampling_thread.start()
+        self._lock.release()
+        local_logger.debug("Sampling thread has been started.")
 
     def shutdown_workers(self) -> None:
         """Shutdown the threads"""
 
+        self._lock.acquire()
         self._shutdown_event.set()
-        with self._lock:
-            self._sampling_thread.join(timeout=1.0)
+        self._sampling_thread.join(timeout=1.0)
+        self._lock.release()
+        local_logger.debug("Sampling thread has been shut down.")
 
     def clean_up(self) -> None:
         """Clean up the resources"""
@@ -186,7 +198,7 @@ class Dataset(torch.utils.data.Dataset):
         while True:
             if self._shutdown_event.is_set():
                 local_logger.debug("Event has been set. Shutting down the worker...")
-                _pool.shutdown(wait=True)
+                _pool.shutdown(wait=True, cancel_futures=True)
                 return
 
             df = self._parquet.read_row_groups(
@@ -200,9 +212,11 @@ class Dataset(torch.utils.data.Dataset):
                     break
 
                 while psutil.virtual_memory().percent > 90.0:
+                    local_logger.debug("Memory usage is high. Waiting for the memory to be freed...")
                     sleep(self._hold_on_time)
 
                 while self._np_buffer.full() or self._tensor_buffer.full():
+                    local_logger.debug("Buffer queue is full. Waiting for batches to be loaded...")
                     sleep(self._hold_on_time)
 
                 X, y = self._sample_from_df(df=df)
