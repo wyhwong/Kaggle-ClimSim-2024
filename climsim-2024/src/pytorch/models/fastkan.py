@@ -143,8 +143,7 @@ class FastKAN(ModelBase):
     def __init__(
         self,
         layers_hidden: list[int],
-        loss_train: Optional[Callable] = None,
-        loss_val: Optional[Callable] = None,
+        loss_fn: Optional[Callable] = None,
         grid_min: float = -2.0,
         grid_max: float = 2.0,
         num_grids: int = 8,
@@ -155,6 +154,7 @@ class FastKAN(ModelBase):
         """
         Args:
             layers_hidden: list of hidden layer sizes
+            loss_fn: loss function
             grid_min: minimum value of the grid
             grid_max: maximum value of the grid
             num_grids: number of grids
@@ -166,12 +166,9 @@ class FastKAN(ModelBase):
             None
         """
 
-        super().__init__(
-            loss_train=loss_train,
-            loss_val=loss_val,
-        )
+        super().__init__(loss_fn=loss_fn)
 
-        self.layers = nn.ModuleList(
+        self._layers = nn.ModuleList(
             [
                 FastKANLayer(
                     in_dim,
@@ -189,9 +186,9 @@ class FastKAN(ModelBase):
 
         super().__post_init__()
 
-    def forward(self, X):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through the network"""
 
-        for layer in self.layers:
-            X = layer(X)
-        return X
+        for layer in self._layers:
+            x = layer(x)
+        return x

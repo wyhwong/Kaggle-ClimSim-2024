@@ -34,6 +34,7 @@ class Dataset(torch.utils.data.Dataset):
         n_group_per_sampling: Optional[int] = None,
         to_tensor: bool = True,
         normalize: bool = False,
+        drop_unlearnable: bool = False,
     ) -> None:
         """
         Initialize the Dataset
@@ -50,6 +51,7 @@ class Dataset(torch.utils.data.Dataset):
             n_group_per_sampling (int): The number of groups to be sampled per iteration
             to_tensor (bool): Convert the data to GPU tensors
             normalize (bool): Normalize the data
+            drop_unlearnable (bool): Drop the unlearnable data
 
         Returns:
             None
@@ -69,15 +71,15 @@ class Dataset(torch.utils.data.Dataset):
         self._hold_on_time = hold_on_time
         self._to_tensor = to_tensor
         self._normalize = normalize
+        self._drop_unlearnable = drop_unlearnable
 
         self._n_samples = sum([self._parquet.metadata.row_group(g).num_rows for g in self._groups])
-        self._max_idx = self.__len__() - 1
-        self._X_min = self._X_scaling = self._y_min = self._y_scaling = np.array([])
+        self._x_min = self._x_scaling = self._y_min = self._y_scaling = np.array([])
         self._init_scaling()
 
-        self._shutdown_event = threading.Event()
+        self._shutdown_event: Optional[threading.Event] = None
         self._lock = threading.Lock()
-        self._sampling_thread = threading.Thread(target=lambda: None)
+        self._sampling_thread = threading.Thread(target=lambda: None, daemon=True)
         self._np_buffer: Queue[tuple[np.ndarray, np.ndarray]] = Queue(maxsize=self._buffer_size)
         self._tensor_buffer: Queue[tuple[torch.Tensor, torch.Tensor]] = Queue(maxsize=self._buffer_size)
 
@@ -89,12 +91,11 @@ class Dataset(torch.utils.data.Dataset):
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor] | tuple[np.ndarray, np.ndarray]:
         """Return the data at the given index from the buffer"""
 
-        if idx == self._max_idx:
-            local_logger.info("One epoch ended, Restarting the sampling thread...")
-            self.shutdown_workers()
-            self.start_workers()
+        if not idx:
+            self.shutdown_sampling_worker()
+            self.start_sampling_worker()
 
-        if self._np_buffer.empty() or self._tensor_buffer.empty():
+        if self._np_buffer.empty() and self._tensor_buffer.empty():
             local_logger.debug("Buffer queue is empty. Waiting for batches to be loaded...")
 
         if self._to_tensor:
@@ -102,22 +103,25 @@ class Dataset(torch.utils.data.Dataset):
 
         return self._np_buffer.get()
 
-    def start_workers(self) -> None:
+    def start_sampling_worker(self) -> None:
         """Start the worker threads"""
 
         self._lock.acquire()
         self._shutdown_event = threading.Event()
-        self._sampling_thread = threading.Thread(target=self._worker_fn)
+        self._sampling_thread = threading.Thread(target=self._sampling_worker_fn, daemon=True)
         self._sampling_thread.start()
         self._lock.release()
         local_logger.debug("Sampling thread has been started.")
 
-    def shutdown_workers(self) -> None:
+    def shutdown_sampling_worker(self) -> None:
         """Shutdown the threads"""
+
+        if self._shutdown_event is None:
+            return
 
         self._lock.acquire()
         self._shutdown_event.set()
-        self._sampling_thread.join(timeout=1.0)
+        self._sampling_thread.join()
         self._lock.release()
         local_logger.debug("Sampling thread has been shut down.")
 
@@ -127,14 +131,13 @@ class Dataset(torch.utils.data.Dataset):
         self._np_buffer.queue.clear()
         self._tensor_buffer.queue.clear()
 
-    def _init_scaling(self) -> None:
-        """
-        Get the scaling values for normalization
+    def get_cols(self) -> tuple[list[str], list[str]]:
+        """Get the input and target columns"""
 
-        NOTE: This function read the metadata of the source file to get the max and min values.
-              It therefore is much faster than polars,
-              which go through the whole file to get the max and min values.
-        """
+        return self._input_cols, self._target_cols
+
+    def get_extremes_in_cols(self) -> tuple[pd.Series, pd.Series]:
+        """Get the min and max values of the columns"""
 
         cols = self._input_cols + self._target_cols
         max_values = {col: -np.inf for col in cols}
@@ -151,14 +154,43 @@ class Dataset(torch.utils.data.Dataset):
                     min_values[col] = min(min_values[col], col_meta.statistics.min)
 
         ds_min, ds_max = pd.Series(min_values), pd.Series(max_values)
+        return ds_min, ds_max
 
-        self._X_min = ds_min[self._input_cols].values
-        self._X_scaling = ds_max[self._input_cols].values - self._X_min
-        self._X_scaling[self._X_scaling == 0] = 1.0
+    def _init_scaling(self) -> None:
+        """
+        Get the scaling values for normalization
+
+        NOTE: This function read the metadata of the source file to get the max and min values.
+              It therefore is much faster than polars,
+              which go through the whole file to get the max and min values.
+        """
+
+        ds_min, ds_max = self.get_extremes_in_cols()
+
+        self._x_min = ds_min[self._input_cols].values
+        self._x_scaling = ds_max[self._input_cols].values - self._x_min
+        if self._drop_unlearnable:
+            unlearnable_idx = np.nonzero(self._x_scaling == 0)[0]
+            unlearnable_cols = [self._input_cols[i] for i in unlearnable_idx]
+            self._input_cols = [col for col in self._input_cols if col not in unlearnable_cols]
+            self._x_min = ds_min[self._input_cols].values
+            self._x_scaling = ds_max[self._input_cols].values - self._x_min
+            local_logger.warning(
+                "Dropped unlearnable columns: %s. Please check whether this is expected.", unlearnable_cols
+            )
+            local_logger.info("Updated input columns: %s.", self._input_cols)
+        else:
+            self._x_scaling[self._x_scaling == 0] = 1.0
 
         self._y_min = ds_min[self._target_cols].values
         self._y_scaling = ds_max[self._target_cols].values - self._y_min
-        self._y_scaling[self._y_scaling == 0] = 1.0
+        if np.any(self._y_scaling == 0):
+            unlearnable_idx = np.nonzero(self._y_scaling == 0)[0]
+            local_logger.warning(
+                "Unlearnable columns in the target: %s. Please check whether this is expected.",
+                [self._target_cols[i] for i in unlearnable_idx],
+            )
+            self._y_scaling[self._y_scaling == 0] = 1.0
 
     def _get_rows_group(self, size: int) -> np.ndarray:
         """Return a random group"""
@@ -169,27 +201,27 @@ class Dataset(torch.utils.data.Dataset):
         """Sample from a DataFrame"""
 
         samples = df.sample(self._batch_size).reset_index(drop=True)
-        X, y = samples[self._input_cols].values, samples[self._target_cols].values
+        x, y = samples[self._input_cols].values, samples[self._target_cols].values
 
         if self._normalize:
-            return self._normalize_batch(X, y)
-        return X, y
+            return self._normalize_batch(x, y)
+        return x, y
 
-    def _normalize_batch(self, X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def _normalize_batch(self, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Normalize the data"""
 
-        X = (X - self._X_min) / self._X_scaling
+        x = (x - self._x_min) / self._x_scaling
         y = (y - self._y_min) / self._y_scaling
-        return X, y
+        return x, y
 
-    def _put_batch_to_tensor_buffer(self, X: np.ndarray, y: np.ndarray) -> None:
+    def _put_batch_to_tensor_buffer(self, x: np.ndarray, y: np.ndarray) -> None:
         """Convert the data to GPU tensors"""
 
-        _X = torch.Tensor(X).to(src.env.DEVICE)
+        _x = torch.Tensor(x).to(src.env.DEVICE)
         _y = torch.Tensor(y).to(src.env.DEVICE)
-        self._tensor_buffer.put((_X, _y))
+        self._tensor_buffer.put((_x, _y))
 
-    def _worker_fn(self) -> None:
+    def _sampling_worker_fn(self) -> None:
         """Load batches in the background and populate the buffer queue"""
 
         _pool = ThreadPoolExecutor(max_workers=self._n_batch_per_sampling)
@@ -198,12 +230,15 @@ class Dataset(torch.utils.data.Dataset):
         while True:
             if self._shutdown_event.is_set():
                 local_logger.debug("Event has been set. Shutting down the worker...")
+                wait(futures)
                 _pool.shutdown(wait=True, cancel_futures=True)
                 return
 
             df = self._parquet.read_row_groups(
                 row_groups=self._get_rows_group(self._n_group_per_sampling),
             ).to_pandas()
+
+            # We wait here to allow new data to be loaded
             wait(futures)
             futures.clear()
 
@@ -211,23 +246,36 @@ class Dataset(torch.utils.data.Dataset):
                 if self._shutdown_event.is_set():
                     break
 
-                while psutil.virtual_memory().percent > 90.0:
-                    local_logger.debug("Memory usage is high. Waiting for the memory to be freed...")
-                    sleep(self._hold_on_time)
+                self._sleep_if_memory_high()
+                self._sleep_if_buffer_full()
 
-                while self._np_buffer.full() or self._tensor_buffer.full():
-                    local_logger.debug("Buffer queue is full. Waiting for batches to be loaded...")
-                    sleep(self._hold_on_time)
-
-                X, y = self._sample_from_df(df=df)
-
-                if self._to_tensor:
-                    futures.append(_pool.submit(self._put_batch_to_tensor_buffer, X, y))
-                else:
-                    self._np_buffer.put((X, y))
+                x, y = self._sample_from_df(df=df)
+                self._put_batch_to_tensor_buffer(x, y)
 
             del df
             local_logger.debug("Cleaned up for sampling, waiting for the next iteration...")
+
+    def _put_samples_to_buffer(self, x: np.ndarray, y: np.ndarray) -> None:
+        """Put the samples to the buffer"""
+
+        if self._to_tensor:
+            self._put_batch_to_tensor_buffer(x, y)
+        else:
+            self._np_buffer.put((x, y))
+
+    def _sleep_if_memory_high(self) -> None:
+        """Sleep if the memory usage is high"""
+
+        while psutil.virtual_memory().percent > 90.0:
+            local_logger.debug("Memory usage is high. Waiting for the memory to be freed...")
+            sleep(self._hold_on_time)
+
+    def _sleep_if_buffer_full(self) -> None:
+        """Sleep if the buffer queue is full"""
+
+        while self._np_buffer.full() or self._tensor_buffer.full():
+            local_logger.debug("Buffer queue is full. Waiting for batches to be loaded...")
+            sleep(self._hold_on_time)
 
     def to_dataloader(self, **kwargs) -> torch.utils.data.DataLoader:
         """Return a torch DataLoader object"""
