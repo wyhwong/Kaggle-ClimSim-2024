@@ -14,11 +14,7 @@ local_logger = src.logger.get_logger(__name__)
 class ModelBase(lightning.LightningModule, ABC):
     """Multilayer perceptron model for regression."""
 
-    def __init__(
-        self,
-        loss_train: Optional[Callable] = None,
-        loss_val: Optional[Callable] = None,
-    ) -> None:
+    def __init__(self, loss_fn: Optional[Callable] = None) -> None:
         """
         Initialize the model.
 
@@ -32,8 +28,7 @@ class ModelBase(lightning.LightningModule, ABC):
 
         super().__init__()
 
-        self._loss_train = loss_train or nn.functional.mse_loss
-        self._loss_val = loss_val or nn.functional.mse_loss
+        self._loss_fn = loss_fn or nn.functional.mse_loss
 
         self._batch_loss_train: list[float] = []
         self._batch_loss_val: list[float] = []
@@ -41,12 +36,15 @@ class ModelBase(lightning.LightningModule, ABC):
         self._epoch_loss_train: dict[int, float] = {}
         self._epoch_loss_val: dict[int, float] = {}
 
+        self._best_loss_train: float = float("inf")
+        self._best_loss_val: float = float("inf")
+
     def __post_init__(self) -> None:
         """Post initialization."""
 
-        self._optimizers: list[torch.optim.Optimizer] = [torch.optim.Adam(self.parameters(), lr=1e-3)]
+        self._optimizers: list[torch.optim.Optimizer] = [torch.optim.Adam(self.parameters(), lr=1e-6)]
         self._schedulers: list[torch.optim.lr_scheduler.LRScheduler] = [
-            torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.1) for optimizer in self._optimizers
+            torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.99) for optimizer in self._optimizers
         ]
 
     def replace_optimizers(
@@ -65,7 +63,7 @@ class ModelBase(lightning.LightningModule, ABC):
         return self._epoch_loss_train, self._epoch_loss_val
 
     @abstractmethod
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the model.
 
@@ -83,10 +81,12 @@ class ModelBase(lightning.LightningModule, ABC):
     ) -> torch.Tensor:
         """Training step."""
 
-        _X, _y = batch
-        X, y = _X[0], _y[0]
-        y_hat = self.forward(X)
-        batch_loss = self._loss_train(y_hat, y)
+        # FIXME: Originally it should be x, y = batch
+        # However, we are using a DataLoader with BatchSampler
+        _x, _y = batch
+        x, y = _x[0], _y[0]
+        y_hat = self.forward(x)
+        batch_loss = self._loss_fn(y_hat, y)
 
         self._batch_loss_train.append(batch_loss.detach().cpu().numpy())
         self.log("train_loss", batch_loss)
@@ -99,8 +99,13 @@ class ModelBase(lightning.LightningModule, ABC):
         self._epoch_loss_train[self.current_epoch] = epoch_loss
         self._batch_loss_train.clear()
 
-        self.log("train_epoch_loss", epoch_loss)
-        local_logger.info("Epoch %d - Training Loss: %.4f", self.current_epoch, epoch_loss)
+        if epoch_loss < self._best_loss_train:
+            self._best_loss_train = epoch_loss
+            local_logger.info("Epoch %d - Best Training Loss: %.4f", self.current_epoch, epoch_loss)
+        else:
+            local_logger.info("Epoch %d - Training Loss: %.4f", self.current_epoch, epoch_loss)
+
+        self.log("train_epoch_loss", epoch_loss, on_step=False, on_epoch=True)
 
     def validation_step(
         self,
@@ -109,10 +114,12 @@ class ModelBase(lightning.LightningModule, ABC):
     ) -> torch.Tensor:
         """Validation step."""
 
-        _X, _y = batch
-        X, y = _X[0], _y[0]
-        y_hat = self.forward(X)
-        batch_loss = self._loss_val(y_hat, y)
+        # FIXME: Originally it should be X, y = batch
+        # However, we are using a DataLoader with BatchSampler
+        _x, _y = batch
+        x, y = _x[0], _y[0]
+        y_hat = self.forward(x)
+        batch_loss = self._loss_fn(y_hat, y)
 
         self._batch_loss_val.append(batch_loss.detach().cpu().numpy())
         self.log("val_loss", batch_loss)
@@ -125,8 +132,13 @@ class ModelBase(lightning.LightningModule, ABC):
         self._epoch_loss_val[self.current_epoch] = epoch_loss
         self._batch_loss_val.clear()
 
-        self.log("val_epoch_loss", epoch_loss)
-        local_logger.info("Epoch %d - Validation Loss: %.4f", self.current_epoch, epoch_loss)
+        if epoch_loss < self._best_loss_val:
+            self._best_loss_val = epoch_loss
+            local_logger.info("Epoch %d - Best Validation Loss: %.4f", self.current_epoch, epoch_loss)
+        else:
+            local_logger.info("Epoch %d - Validation Loss: %.4f", self.current_epoch, epoch_loss)
+
+        self.log("val_epoch_loss", epoch_loss, on_step=False, on_epoch=True)
 
     def configure_optimizers(self) -> tuple[list[torch.optim.Optimizer], list[torch.optim.lr_scheduler.LRScheduler]]:
         """Return the optimizer."""

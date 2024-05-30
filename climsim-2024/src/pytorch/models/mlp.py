@@ -10,14 +10,13 @@ from src.pytorch.models.base import ModelBase
 local_logger = src.logger.get_logger(__name__)
 
 
-class DynamicMLP(ModelBase):
+class MLP(ModelBase):
     """Multilayer perceptron model for regression."""
 
     def __init__(
         self,
-        layers: Optional[nn.Sequential] = None,
-        loss_train: Optional[Callable] = None,
-        loss_val: Optional[Callable] = None,
+        layers_hidden: Optional[nn.Sequential] = None,
+        loss_fn: Optional[Callable] = None,
     ) -> None:
         """
         Initialize a multilayer perceptron model for regression.
@@ -40,19 +39,15 @@ class DynamicMLP(ModelBase):
 
         Args:
             layers (Optional[nn.Sequential]): Custom layers for the model
-            loss_train (Optional[nn.modules.loss._Loss]): Loss function for training
-            loss_val (Optional[nn.modules.loss._Loss]): Loss function for validation
+            loss_fn (Optional[Callable]): Loss function for training
 
         Returns:
             None
         """
 
-        super().__init__(
-            loss_train=loss_train,
-            loss_val=loss_val,
-        )
+        super().__init__(loss_fn=loss_fn)
 
-        self._layers = layers or nn.Sequential(
+        self._layers = layers_hidden or nn.Sequential(
             nn.Linear(556, 768),
             nn.LeakyReLU(),
             nn.Linear(768, 640),
@@ -68,15 +63,7 @@ class DynamicMLP(ModelBase):
 
         super().__post_init__()
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass of the model.
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass of the model."""
 
-        Args:
-            x (torch.Tensor): Input tensor
-
-        Returns:
-            torch.Tensor: Output tensor
-        """
-
-        return self._layers(X)
+        return self._layers(x)
