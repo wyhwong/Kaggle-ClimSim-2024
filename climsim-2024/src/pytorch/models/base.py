@@ -57,11 +57,6 @@ class ModelBase(lightning.LightningModule, ABC):
         self._optimizers = optimizers
         self._schedulers = schedulers
 
-    def get_epoch_loss(self) -> tuple[dict[int, float], dict[int, float]]:
-        """Get the epoch loss."""
-
-        return self._epoch_loss_train, self._epoch_loss_val
-
     @abstractmethod
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

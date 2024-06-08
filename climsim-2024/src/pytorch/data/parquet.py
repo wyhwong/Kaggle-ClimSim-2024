@@ -74,6 +74,7 @@ class Dataset(torch.utils.data.Dataset):
         self._drop_unlearnable = drop_unlearnable
 
         self._n_samples = sum([self._parquet.metadata.row_group(g).num_rows for g in self._groups])
+        self._max_idx = self.__len__() - 1
         self._x_min = self._x_scaling = self._y_min = self._y_scaling = np.array([])
         self._init_scaling()
 
@@ -91,7 +92,10 @@ class Dataset(torch.utils.data.Dataset):
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor] | tuple[np.ndarray, np.ndarray]:
         """Return the data at the given index from the buffer"""
 
-        if not idx:
+        if not self._sampling_thread.is_alive():
+            self.start_sampling_worker()
+
+        if idx == self._max_idx:
             self.shutdown_sampling_worker()
             self.start_sampling_worker()
 
