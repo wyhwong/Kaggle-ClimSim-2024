@@ -1,6 +1,4 @@
-import concurrent.futures
 import threading
-from concurrent.futures import ThreadPoolExecutor, wait
 from queue import Queue
 from time import sleep
 from typing import Optional
@@ -78,7 +76,7 @@ class Dataset(torch.utils.data.Dataset):
         self._x_min = self._x_scaling = self._y_min = self._y_scaling = np.array([])
         self._init_scaling()
 
-        self._shutdown_event: Optional[threading.Event] = None
+        self._shutdown_event = threading.Event()
         self._lock = threading.Lock()
         self._sampling_thread = threading.Thread(target=lambda: None, daemon=True)
         self._np_buffer: Queue[tuple[np.ndarray, np.ndarray]] = Queue(maxsize=self._buffer_size)
@@ -119,9 +117,6 @@ class Dataset(torch.utils.data.Dataset):
 
     def shutdown_sampling_worker(self) -> None:
         """Shutdown the threads"""
-
-        if self._shutdown_event is None:
-            return
 
         self._lock.acquire()
         self._shutdown_event.set()
@@ -228,23 +223,14 @@ class Dataset(torch.utils.data.Dataset):
     def _sampling_worker_fn(self) -> None:
         """Load batches in the background and populate the buffer queue"""
 
-        _pool = ThreadPoolExecutor(max_workers=self._n_batch_per_sampling)
-        futures: list[concurrent.futures._base.Future] = []
-
         while True:
             if self._shutdown_event.is_set():
                 local_logger.debug("Event has been set. Shutting down the worker...")
-                wait(futures)
-                _pool.shutdown(wait=True, cancel_futures=True)
                 return
 
             df = self._parquet.read_row_groups(
                 row_groups=self._get_rows_group(self._n_group_per_sampling),
             ).to_pandas()
-
-            # We wait here to allow new data to be loaded
-            wait(futures)
-            futures.clear()
 
             for _ in range(self._n_batch_per_sampling):
                 if self._shutdown_event.is_set():
