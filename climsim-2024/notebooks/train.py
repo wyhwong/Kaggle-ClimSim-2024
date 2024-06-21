@@ -9,7 +9,9 @@ from lightning import LightningDataModule
 from src.utils import check_and_create_dir
 from src.pytorch.models.utils import get_default_trainer
 from src.pytorch.models.mlp import MLP
-from src.pytorch.models.fastkan import FastKAN
+
+# from src.pytorch.models.fastkan import FastKAN
+# from src.pytorch.models.transformer import Transformer
 from src.pytorch.data.parquet import Dataset
 from src.pytorch.loss.r2 import r2_residual_multivariate
 from src.schemas.climsim import INPUT_COLUMNS, OUTPUT_COLUMNS

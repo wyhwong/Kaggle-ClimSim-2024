@@ -1,7 +1,7 @@
 import pandas as pd
 import torch
+import numpy as np
 from torch import nn
-from tqdm import tqdm
 
 import src.env
 import src.logger
@@ -14,6 +14,7 @@ local_logger = src.logger.get_logger(__name__)
 def output_compressed_parquet(
     model: nn.Module,
     df: pd.DataFrame,
+    input_cols: list[str],
     weights: pd.DataFrame,
     output_dir: str = ".",
 ) -> None:
@@ -31,19 +32,24 @@ def output_compressed_parquet(
         None
     """
 
-    inputs_set = df.loc[:, src.schemas.climsim.INPUT_COLUMNS].values
+    inputs_set = df.loc[:, input_cols].values
     outputs_set = []
 
     model.eval()
     # Loop over the inputs
     # This loop is to avoid caching the whole dataset in GPU memory
-    for inputs in tqdm(inputs_set):
-        inputs = torch.tensor(inputs).float().to(src.env.DEVICE)
-        output = model(inputs)
+    while len(inputs_set) > 0:
+        if len(inputs_set) > 10000:
+            inputs, inputs_set = inputs_set[:10000], inputs_set[10000:]
+        else:
+            inputs, inputs_set = inputs_set, pd.DataFrame()
+        inputs = torch.Tensor(inputs).float().to(src.env.DEVICE)
+        output = model.forward(inputs)
+        del inputs
         outputs_set.append(output.cpu().detach().numpy())
 
     df_output = pd.DataFrame(
-        outputs_set,
+        np.concatenate(outputs_set, axis=0),
         columns=src.schemas.climsim.OUTPUT_COLUMNS,
     )
     df_output["sample_id"] = df["sample_id"]
