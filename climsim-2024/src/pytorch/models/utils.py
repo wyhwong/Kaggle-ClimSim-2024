@@ -12,6 +12,7 @@ local_logger = src.logger.get_logger(__name__)
 
 
 def get_default_trainer(
+    deterministic: bool,
     model_name: str,
     max_epochs: int = 100,
     max_time: datetime.timedelta = datetime.timedelta(hours=1),
@@ -25,6 +26,7 @@ def get_default_trainer(
     Get the default trainer for the model.
 
     Args:
+        deterministic (bool): Whether to use deterministic training
         model_name (str): The name of the model
         max_epochs (int, optional): The maximum number of epochs. Defaults to 100.
         max_time (datetime.timedelta, optional): The maximum time for training. Defaults to datetime.timedelta(hours=1).
@@ -64,7 +66,7 @@ def get_default_trainer(
     trainer = lightning.pytorch.Trainer(
         max_epochs=max_epochs,
         max_time=max_time,
-        deterministic=True,
+        deterministic=deterministic,
         check_val_every_n_epoch=check_val_every_n_epoch,
         log_every_n_steps=log_every_n_steps,
         default_root_dir=f"./training_logs/{model_name}",

@@ -8,7 +8,9 @@ from lightning import LightningDataModule
 
 from src.utils import check_and_create_dir
 from src.pytorch.models.utils import get_default_trainer
-from src.pytorch.models.mlp import MLP
+
+# from src.pytorch.models.mlp import MLP
+from src.pytorch.models.cnn import CNN
 
 # from src.pytorch.models.fastkan import FastKAN
 # from src.pytorch.models.transformer import Transformer
@@ -25,7 +27,7 @@ OUTPUT_DIR = "./results"
 check_and_create_dir(OUTPUT_DIR)
 MODEL_NAME = "climsim_best_model"
 BATCH_SIZE = 3072
-N_EPOCHS = 600
+N_EPOCHS = 100
 TRAINING_SAMPLE_FRAC = 0.7
 # BUFFER_SIZE: number of batches being preloaded in memory
 TRAINING_BUFFER_SIZE = 100
@@ -106,9 +108,10 @@ class ClimSimDataModule(LightningDataModule):
 def train_model():
     """Train the model."""
 
-    model = MLP(loss_fn=r2_residual_multivariate)
+    model = CNN(loss_fn=r2_residual_multivariate)
     datamodule = ClimSimDataModule(TRAINSET_DATA_PATH, BATCH_SIZE)
     trainer = get_default_trainer(
+        deterministic=False,
         model_name=MODEL_NAME,
         max_epochs=N_EPOCHS,
         max_time=datetime.timedelta(days=3),
