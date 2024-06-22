@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import torch
 from torch import nn
+from tqdm import tqdm
 
 import src.env
 import src.logger
@@ -36,17 +37,13 @@ def output_compressed_parquet(
     outputs_set = []
 
     model.eval()
-    # Loop over the inputs
-    # This loop is to avoid caching the whole dataset in GPU memory
-    while len(inputs_set) > 0:
-        if len(inputs_set) > 10000:
-            inputs, inputs_set = inputs_set[:10000], inputs_set[10000:]
-        else:
-            inputs, inputs_set = inputs_set, pd.DataFrame()
-        inputs = torch.Tensor(inputs).float().to(src.env.DEVICE)
-        output = model.forward(inputs)
-        del inputs
-        outputs_set.append(output.cpu().detach().numpy())
+
+    # Use tqdm for progress bar
+    for i in tqdm(range(len(inputs_set)), desc="Processing Samples"):
+        inputs = torch.Tensor(inputs_set[i : i + 1]).float().to(src.env.DEVICE)
+        with torch.no_grad():
+            output = model(inputs)
+        outputs_set.append(output.cpu().numpy())
 
     df_output = pd.DataFrame(
         np.concatenate(outputs_set, axis=0),
