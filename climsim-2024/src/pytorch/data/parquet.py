@@ -292,3 +292,19 @@ class Dataset(torch.utils.data.Dataset):
         if is_tensor:
             return torch.Tensor(x).to(src.env.DEVICE), torch.Tensor(y).to(src.env.DEVICE)
         return x, y
+
+    def normalize_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Normalize the data"""
+
+        x = df[self._input_cols].values
+        x = (x - self._x_min) / self._x_scaling
+        df[self._input_cols] = x
+        return df
+
+    def denormalize_targets(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Denormalize the data"""
+
+        y = df[self._target_cols].values
+        y = y * self._y_scaling + self._y_min
+        df[self._target_cols] = y
+        return df

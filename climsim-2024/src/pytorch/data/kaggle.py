@@ -6,6 +6,7 @@ from tqdm import tqdm
 
 import src.env
 import src.logger
+import src.pytorch.data.parquet
 import src.schemas.climsim
 
 
@@ -14,7 +15,8 @@ local_logger = src.logger.get_logger(__name__)
 
 def output_compressed_parquet(
     model: nn.Module,
-    df: pd.DataFrame,
+    dataset: src.pytorch.data.parquet.Dataset,
+    df_input: pd.DataFrame,
     input_cols: list[str],
     weights: pd.DataFrame,
     output_dir: str = ".",
@@ -25,7 +27,9 @@ def output_compressed_parquet(
 
     Args:
         model (nn.Module): The model to be used for inference
-        df (pd.DataFrame): The input data
+        dataset (src.pytorch.data.parquet.Dataset): The dataset object (used for training)
+        df_input (pd.DataFrame): The input data
+        input_cols (list[str]): The input columns
         weights (pd.DataFrame): The weights for each output column
         output_dir (str): The output directory
 
@@ -33,7 +37,8 @@ def output_compressed_parquet(
         None
     """
 
-    inputs_set = df.loc[:, input_cols].values
+    df_input = dataset.normalize_features(df_input)
+    inputs_set = df_input.loc[:, input_cols].values
     outputs_set = []
 
     model.eval()
@@ -49,7 +54,8 @@ def output_compressed_parquet(
         np.concatenate(outputs_set, axis=0),
         columns=src.schemas.climsim.OUTPUT_COLUMNS,
     )
-    df_output["sample_id"] = df["sample_id"]
+    df_output = dataset.denormalize_targets(df_output)
+    df_output["sample_id"] = df_input["sample_id"]
 
     for col in src.schemas.climsim.OUTPUT_COLUMNS:
         df_output[col] *= weights[col]
