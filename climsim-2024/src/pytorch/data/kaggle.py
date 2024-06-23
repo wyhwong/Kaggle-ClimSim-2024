@@ -55,8 +55,7 @@ def output_compressed_parquet(
         df_output[col] *= weights[col]
 
     df_output.to_parquet(
-        path=f"{output_dir}/submission.parquet.gz",
+        path=f"{output_dir}/submission.parquet",
         index=False,
-        compression="gzip",
         engine="pyarrow",
     )
