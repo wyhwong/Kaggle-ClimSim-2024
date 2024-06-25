@@ -279,3 +279,32 @@ class Dataset(torch.utils.data.Dataset):
             ),
             **kwargs,
         )
+
+    def get_batch(self, is_tensor: bool = False) -> tuple[np.ndarray, np.ndarray] | tuple[torch.Tensor, torch.Tensor]:
+        """Get a batch from the buffer"""
+
+        df = self._parquet.read_row_groups(
+            row_groups=self._get_rows_group(self._n_group_per_sampling),
+        ).to_pandas()
+
+        x, y = self._sample_from_df(df=df)
+
+        if is_tensor:
+            return torch.Tensor(x).to(src.env.DEVICE), torch.Tensor(y).to(src.env.DEVICE)
+        return x, y
+
+    def normalize_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Normalize the data"""
+
+        x = df[self._input_cols].values
+        x = (x - self._x_min) / self._x_scaling
+        df[self._input_cols] = x
+        return df
+
+    def denormalize_targets(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Denormalize the data"""
+
+        y = df[self._target_cols].values
+        y = y * self._y_scaling + self._y_min
+        df[self._target_cols] = y
+        return df
