@@ -175,10 +175,17 @@ class Dataset(torch.utils.data.Dataset):
     def _init_standard_scaling(self) -> None:
         """Get the scaling values for standardization"""
 
-        self._norm_x_mean = self._x_stats.loc["mean"].values
-        self._norm_x_std = self._x_stats.loc["std"].values
-        self._norm_y_mean = self._y_stats.loc["mean"].values
-        self._norm_y_std = self._y_stats.loc["std"].values
+        if not self._normalize:
+            self._norm_x_mean = self._x_stats.loc["mean"].values
+            self._norm_x_std = self._x_stats.loc["std"].values
+            self._norm_y_mean = self._y_stats.loc["mean"].values
+            self._norm_y_std = self._y_stats.loc["std"].values
+
+        else:
+            self._norm_x_mean = self._x_stats.loc["norm_mean"].values
+            self._norm_x_std = self._x_stats.loc["norm_std"].values
+            self._norm_y_mean = self._y_stats.loc["norm_mean"].values
+            self._norm_y_std = self._y_stats.loc["norm_std"].values
 
     def _get_rows_group(self, size: int) -> np.ndarray:
         """Return a random group"""
