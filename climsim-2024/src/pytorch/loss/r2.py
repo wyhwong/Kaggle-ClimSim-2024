@@ -11,28 +11,11 @@ def r2_score_multivariate(y_hat: torch.Tensor, y: torch.Tensor) -> torch.tensor:
     Calculate the R2 score for multivariate targets.
 
     Args:
-        predictions (torch.Tensor): The predicted targets.
-        targets (torch.Tensor): The ground truth targets.
+        y_hat (torch.Tensor): The predicted values.
+        y (torch.Tensor): The target values.
 
     Returns:
         torch.Tensor: The R2 score.
-    """
-
-    r2 = 1.0 - r2_residual_multivariate(y_hat, y)
-
-    return r2
-
-
-def r2_residual_multivariate(y_hat: torch.Tensor, y: torch.Tensor) -> torch.tensor:
-    """
-    Calculate the R2 loss.
-
-    Args:
-        y_hat (torch.Tensor): The predicted targets.
-        y (torch.Tensor): The ground truth targets.
-
-    Returns:
-        torch.Tensor: The R2 loss.
     """
 
     mean_targets = torch.mean(y, dim=0)
@@ -41,9 +24,9 @@ def r2_residual_multivariate(y_hat: torch.Tensor, y: torch.Tensor) -> torch.tens
     ss_total[ss_total == 0] = 1.0
     ss_residual = torch.sum(torch.square(y - y_hat), dim=0)
 
-    uni_r2_loss = ss_residual / ss_total
-    loss = torch.nanmean(uni_r2_loss[torch.isfinite(uni_r2_loss)])
+    uni_r2 = 1.0 - ss_residual / ss_total
 
-    local_logger.debug("R2 residual computed: %4f, n_dim: %s", loss, uni_r2_loss.shape)
+    r2 = torch.nanmean(uni_r2[torch.isfinite(uni_r2)])
+    local_logger.debug("R2 computed: %4f, n_dim: %s", r2, uni_r2.shape)
 
-    return loss
+    return r2
