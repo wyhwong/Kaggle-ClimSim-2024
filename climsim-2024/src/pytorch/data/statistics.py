@@ -18,15 +18,35 @@ def compute_dataset_statistics(parquet_path: str) -> tuple[pd.DataFrame, pd.Data
     """
 
     parquet = pq.ParquetFile(parquet_path, memory_map=True, buffer_size=10)
-    grp_x_mean, grp_x_var, grp_y_mean, grp_y_var, grp_nrows = [], [], [], [], []
 
+    # Get the maximum and minimum values of the dataset
+    ds_min, ds_max = get_extremes(parquet)
+    x_min, x_max = ds_min[INPUT_COLUMNS], ds_max[INPUT_COLUMNS]
+    x_range = x_max - x_min
+    y_min, y_max = ds_min[OUTPUT_COLUMNS], ds_max[OUTPUT_COLUMNS]
+    y_range = y_max - y_min
+
+    x_scaling, y_scaling = x_range.copy(), y_range.copy()
+    x_scaling[x_scaling == 0] = 1.0
+    y_scaling[y_scaling == 0] = 1.0
+
+    # Compute the mean and variance of the dataset
+    grp_x_mean, grp_x_var, grp_y_mean, grp_y_var, grp_nrows = [], [], [], [], []
+    grp_norm_x_mean, grp_norm_x_var, grp_norm_y_mean, grp_norm_y_var = [], [], [], []
     for row_group in range(parquet.num_row_groups):
-        df_var = parquet.read_row_group(row_group).to_pandas()
-        grp_x_mean.append(df_var[INPUT_COLUMNS].mean())
-        grp_x_var.append(df_var[INPUT_COLUMNS].var())
-        grp_y_mean.append(df_var[OUTPUT_COLUMNS].mean())
-        grp_y_var.append(df_var[OUTPUT_COLUMNS].var())
-        grp_nrows.append(df_var.shape[0])
+        df_grp = parquet.read_row_group(row_group).to_pandas()
+        grp_x_mean.append(df_grp[INPUT_COLUMNS].mean())
+        grp_x_var.append(df_grp[INPUT_COLUMNS].var())
+        grp_y_mean.append(df_grp[OUTPUT_COLUMNS].mean())
+        grp_y_var.append(df_grp[OUTPUT_COLUMNS].var())
+        grp_nrows.append(df_grp.shape[0])
+
+        grp_norm_x = (df_grp[INPUT_COLUMNS] - x_min) / x_scaling
+        grp_norm_y = (df_grp[OUTPUT_COLUMNS] - y_min) / y_scaling
+        grp_norm_x_mean.append(grp_norm_x.mean())
+        grp_norm_x_var.append(grp_norm_x.var())
+        grp_norm_y_mean.append(grp_norm_y.mean())
+        grp_norm_y_var.append(grp_norm_y.var())
 
     df_grp_x_mean = pd.DataFrame(grp_x_mean)
     df_grp_x_var = pd.DataFrame(grp_x_var)
@@ -34,17 +54,47 @@ def compute_dataset_statistics(parquet_path: str) -> tuple[pd.DataFrame, pd.Data
     df_grp_y_var = pd.DataFrame(grp_y_var)
     ds_nrows = pd.Series(grp_nrows)
 
+    df_grp_norm_x_mean = pd.DataFrame(grp_norm_x_mean)
+    df_grp_norm_x_var = pd.DataFrame(grp_norm_x_var)
+    df_grp_norm_y_mean = pd.DataFrame(grp_norm_y_mean)
+    df_grp_norm_y_var = pd.DataFrame(grp_norm_y_var)
+
     x_mean = df_grp_x_mean.apply(lambda x: (x * ds_nrows).sum() / ds_nrows.sum())
     y_mean = df_grp_y_mean.apply(lambda x: (x * ds_nrows).sum() / ds_nrows.sum())
     x_var = combine_var_from_groups(df_var=df_grp_x_var, df_mean=df_grp_x_mean, grp_nrows=ds_nrows)
     y_var = combine_var_from_groups(df_var=df_grp_y_var, df_mean=df_grp_y_mean, grp_nrows=ds_nrows)
 
-    ds_min, ds_max = get_extremes(parquet)
-    x_min, x_max = ds_min[INPUT_COLUMNS], ds_max[INPUT_COLUMNS]
-    y_min, y_max = ds_min[OUTPUT_COLUMNS], ds_max[OUTPUT_COLUMNS]
+    norm_x_mean = df_grp_norm_x_mean.apply(lambda x: (x * ds_nrows).sum() / ds_nrows.sum())
+    norm_y_mean = df_grp_norm_y_mean.apply(lambda x: (x * ds_nrows).sum() / ds_nrows.sum())
+    norm_x_var = combine_var_from_groups(df_var=df_grp_norm_x_var, df_mean=df_grp_norm_x_mean, grp_nrows=ds_nrows)
+    norm_y_var = combine_var_from_groups(df_var=df_grp_norm_y_var, df_mean=df_grp_norm_y_mean, grp_nrows=ds_nrows)
 
-    df_x_stats = pd.DataFrame({"mean": x_mean, "var": x_var, "min": x_min, "max": x_max})
-    df_y_stats = pd.DataFrame({"mean": y_mean, "var": y_var, "min": y_min, "max": y_max})
+    df_x_stats = pd.DataFrame(
+        {
+            "min": x_min,
+            "max": x_max,
+            "range": x_range,
+            "mean": x_mean,
+            "var": x_var,
+            "std": np.sqrt(x_var),
+            "norm_mean": norm_x_mean,
+            "norm_var": norm_x_var,
+            "norm_std": np.sqrt(norm_x_var),
+        }
+    ).T
+    df_y_stats = pd.DataFrame(
+        {
+            "min": y_min,
+            "max": y_max,
+            "range": y_range,
+            "mean": y_mean,
+            "var": y_var,
+            "std": np.sqrt(y_var),
+            "norm_mean": norm_y_mean,
+            "norm_var": norm_y_var,
+            "norm_std": np.sqrt(norm_y_var),
+        }
+    ).T
 
     return (df_x_stats, df_y_stats)
 

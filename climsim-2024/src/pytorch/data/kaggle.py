@@ -37,7 +37,7 @@ def output_compressed_parquet(
         None
     """
 
-    df_input = dataset.normalize_features(df_input)
+    df_input = dataset.preprocess_features(df_input)
     inputs_set = df_input.loc[:, input_cols].values
     outputs_set = []
 
@@ -54,7 +54,7 @@ def output_compressed_parquet(
         np.concatenate(outputs_set, axis=0),
         columns=src.schemas.climsim.OUTPUT_COLUMNS,
     )
-    df_output = dataset.denormalize_targets(df_output)
+    df_output = dataset.postprocess_targets(df_output)
     df_output["sample_id"] = df_input["sample_id"]
 
     for col in src.schemas.climsim.OUTPUT_COLUMNS:
