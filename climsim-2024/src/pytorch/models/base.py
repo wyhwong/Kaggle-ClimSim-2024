@@ -124,7 +124,7 @@ class ModelBase(lightning.LightningModule, ABC):
         self._batch_loss_val.append(batch_loss.detach().cpu().numpy())
         self.log("val_loss", batch_loss)
 
-        r2_loss = src.pytorch.loss.r2.r2_residual_multivariate(y_hat, y)
+        r2_loss = src.pytorch.loss.r2.r2_score_multivariate(y_hat, y)
         self._batch_r2_loss.append(r2_loss.detach().cpu().numpy())
         self.log("r2_loss", r2_loss)
 

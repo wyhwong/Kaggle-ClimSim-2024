@@ -9,7 +9,6 @@ from lightning import LightningDataModule
 
 from src.pytorch.data.parquet import Dataset
 from src.pytorch.data.statistics import compute_dataset_statistics
-from src.pytorch.loss.r2 import r2_residual_multivariate
 from src.pytorch.models.cnn import CNN
 from src.pytorch.models.utils import get_default_trainer
 from src.utils import check_and_create_dir
@@ -36,9 +35,8 @@ VALIDATION_N_GROUP_PER_SAMPLING = 1
 # N_BATCH_PER_SAMPLING: number of batches being sampled in each iteration
 TRAINING_N_BATCH_PER_SAMPLING = 100
 VALIDATION_N_BATCH_PER_SAMPLING = 100
-IS_NORMALIZED = True
+IS_NORMALIZED = False
 IS_STANDARDIZED = True
-IS_UNLEARNABLE_DROPPED = False
 
 # Compute and save dataset statistics if not already done
 if not (os.path.exists(X_STATS_PATH) and os.path.exists(Y_STATS_PATH)):
@@ -84,7 +82,6 @@ class ClimSimDataModule(LightningDataModule):
             to_tensor=True,
             normalize=IS_NORMALIZED,
             standardize=IS_STANDARDIZED,
-            drop_unlearnable=IS_UNLEARNABLE_DROPPED,
         )
         self.val = Dataset(
             source=self._data_path,
@@ -98,7 +95,6 @@ class ClimSimDataModule(LightningDataModule):
             to_tensor=True,
             normalize=IS_NORMALIZED,
             standardize=IS_STANDARDIZED,
-            drop_unlearnable=IS_UNLEARNABLE_DROPPED,
         )
 
     def train_dataloader(self):
@@ -121,7 +117,7 @@ class ClimSimDataModule(LightningDataModule):
 def train_model():
     """Train the model."""
 
-    model = CNN()  # loss_fn=r2_residual_multivariate)
+    model = CNN()
     datamodule = ClimSimDataModule(TRAINSET_DATA_PATH, BATCH_SIZE)
     trainer = get_default_trainer(
         deterministic=False,
