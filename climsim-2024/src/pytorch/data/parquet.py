@@ -33,7 +33,6 @@ class Dataset(torch.utils.data.Dataset):
         to_tensor: bool = True,
         normalize: bool = False,
         standardize: bool = False,
-        drop_unlearnable: bool = False,
     ) -> None:
         """
         Initialize the Dataset
@@ -51,7 +50,6 @@ class Dataset(torch.utils.data.Dataset):
             to_tensor (bool): Convert the data to GPU tensors
             normalize (bool): Normalize the data
             standardize (bool): Standardize the data
-            drop_unlearnable (bool): Drop the unlearnable data
 
         Returns:
             None
@@ -74,15 +72,14 @@ class Dataset(torch.utils.data.Dataset):
         self._to_tensor = to_tensor
         self._normalize = normalize
         self._standardize = standardize
-        self._drop_unlearnable = drop_unlearnable
 
         self._n_samples = sum([self._parquet.metadata.row_group(g).num_rows for g in self._groups])
         self._max_idx = self.__len__() - 1
 
-        self._x_min = self._x_scaling = self._y_min = self._y_scaling = np.array([])
-        self._init_norm_scaling()
-        self._norm_x_mean = self._norm_x_std = self._norm_y_mean = self._norm_y_std = np.array([])
-        self._init_standard_scaling()
+        self._x_min = self._x_norm_scaling = self._y_min = self._y_norm_scaling = np.array([])
+        self._init_normalization_scaling()
+        self._x_std_mean = self._x_std_scaling = self._y_std_mean = self._y_std_scaling = np.array([])
+        self._init_standardization_scaling()
 
         self._shutdown_event = threading.Event()
         self._lock = threading.Lock()
@@ -143,49 +140,38 @@ class Dataset(torch.utils.data.Dataset):
 
         return self._input_cols, self._target_cols
 
-    def _init_norm_scaling(self) -> None:
+    def _init_normalization_scaling(self) -> None:
         """Get the scaling values for normalization"""
 
         self._x_min = self._x_stats.loc["min"].values
-        self._x_scaling = self._x_stats.loc["max"].values - self._x_min
-        if self._drop_unlearnable:
-            unlearnable_idx = np.nonzero(self._x_scaling == 0)[0]
-            unlearnable_cols = [self._input_cols[i] for i in unlearnable_idx]
-            self._input_cols = [col for col in self._input_cols if col not in unlearnable_cols]
-            self._x_min = self._x_stats.loc["min"].values
-            self._x_scaling = self._x_stats.loc["max"].values - self._x_min
-            local_logger.warning(
-                "Dropped unlearnable columns: %s. Please check whether this is expected.", unlearnable_cols
-            )
-            local_logger.info("Updated input columns: %s.", self._input_cols)
-
-        else:
-            self._x_scaling[self._x_scaling == 0] = 1.0
-
+        self._x_norm_scaling = self._x_stats.loc["max"].values - self._x_min
         self._y_min = self._y_stats.loc["min"].values
-        self._y_scaling = self._y_stats.loc["max"].values - self._y_min
-        if any(self._y_scaling == 0):
-            unlearnable_idx = np.nonzero(self._y_scaling == 0)[0]
-            local_logger.warning(
-                "Unlearnable columns in the target: %s. Please check whether this is expected.",
-                [self._target_cols[i] for i in unlearnable_idx],
-            )
-            self._y_scaling[self._y_scaling == 0] = 1.0
+        self._y_norm_scaling = self._y_stats.loc["max"].values - self._y_min
 
-    def _init_standard_scaling(self) -> None:
+        # Replace 0 with 1 to avoid division by zero
+        # If max is min, then the normalized value is always 0
+        self._x_norm_scaling[self._x_norm_scaling == 0] = 1.0
+        self._y_norm_scaling[self._y_norm_scaling == 0] = 1.0
+
+    def _init_standardization_scaling(self) -> None:
         """Get the scaling values for standardization"""
 
         if not self._normalize:
-            self._norm_x_mean = self._x_stats.loc["mean"].values
-            self._norm_x_std = self._x_stats.loc["std"].values
-            self._norm_y_mean = self._y_stats.loc["mean"].values
-            self._norm_y_std = self._y_stats.loc["std"].values
+            self._x_std_mean = self._x_stats.loc["mean"].values
+            self._x_std_scaling = self._x_stats.loc["std"].values
+            self._y_std_mean = self._y_stats.loc["mean"].values
+            self._y_std_scaling = self._y_stats.loc["std"].values
 
         else:
-            self._norm_x_mean = self._x_stats.loc["norm_mean"].values
-            self._norm_x_std = self._x_stats.loc["norm_std"].values
-            self._norm_y_mean = self._y_stats.loc["norm_mean"].values
-            self._norm_y_std = self._y_stats.loc["norm_std"].values
+            self._x_std_mean = self._x_stats.loc["norm_mean"].values
+            self._x_std_scaling = self._x_stats.loc["norm_std"].values
+            self._y_std_mean = self._y_stats.loc["norm_mean"].values
+            self._y_std_scaling = self._y_stats.loc["norm_std"].values
+
+        # Replace 0 with 1 to avoid division by zero
+        # If std is 0, then the standardized value is always 0
+        self._x_std_scaling[self._x_std_scaling == 0] = 1.0
+        self._y_std_scaling[self._y_std_scaling == 0] = 1.0
 
     def _get_rows_group(self, size: int) -> np.ndarray:
         """Return a random group"""
@@ -209,15 +195,15 @@ class Dataset(torch.utils.data.Dataset):
     def _normalize_batch(self, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Normalize the data"""
 
-        x = (x - self._x_min) / self._x_scaling
-        y = (y - self._y_min) / self._y_scaling
+        x = (x - self._x_min) / self._x_norm_scaling
+        y = (y - self._y_min) / self._y_norm_scaling
         return x, y
 
     def _standardize_batch(self, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Standardize the data"""
 
-        x = (x - self._norm_x_mean) / self._norm_x_std
-        y = (y - self._norm_y_mean) / self._norm_y_std
+        x = (x - self._x_std_mean) / self._x_std_scaling
+        y = (y - self._y_std_mean) / self._y_std_scaling
         return x, y
 
     def _put_batch_to_tensor_buffer(self, x: np.ndarray, y: np.ndarray) -> None:
@@ -306,10 +292,10 @@ class Dataset(torch.utils.data.Dataset):
         x = df[self._input_cols].values
 
         if self._normalize:
-            x = (x - self._x_min) / self._x_scaling
+            x = (x - self._x_min) / self._x_norm_scaling
 
         if self._standardize:
-            x = (x - self._norm_x_mean) / self._norm_x_std
+            x = (x - self._x_std_mean) / self._x_std_scaling
 
         df[self._input_cols] = x
         return df
@@ -319,11 +305,15 @@ class Dataset(torch.utils.data.Dataset):
 
         y = df[self._target_cols].values
 
-        if self._normalize:
-            y = y * self._y_scaling + self._y_min
+        # NOTE:
+        # We did normalization first and then standardization
+        # So here we first unstardardize and then denormalize
 
         if self._standardize:
-            y = y * self._norm_y_std + self._norm_y_mean
+            y = y * self._y_std_scaling + self._y_std_mean
+
+        if self._normalize:
+            y = y * self._y_norm_scaling + self._y_min
 
         df[self._target_cols] = y
         return df
