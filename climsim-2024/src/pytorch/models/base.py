@@ -6,6 +6,7 @@ import torch
 from torch import nn
 
 import src.logger
+import src.pytorch.loss.r2
 
 
 local_logger = src.logger.get_logger(__name__)
@@ -32,6 +33,7 @@ class ModelBase(lightning.LightningModule, ABC):
 
         self._batch_loss_train: list[float] = []
         self._batch_loss_val: list[float] = []
+        self._batch_r2_loss: list[float] = []
 
         self._epoch_loss_train: dict[int, float] = {}
         self._epoch_loss_val: dict[int, float] = {}
@@ -46,7 +48,7 @@ class ModelBase(lightning.LightningModule, ABC):
         self._schedulers: list[torch.optim.lr_scheduler.LRScheduler] = [
             # torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.99) for optimizer in self._optimizers
             # torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=1e-2, total_steps=600)
-            torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=200, eta_min=1e-7)
+            torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=12, eta_min=1e-7)
             for optimizer in self._optimizers
         ]
 
@@ -121,6 +123,11 @@ class ModelBase(lightning.LightningModule, ABC):
 
         self._batch_loss_val.append(batch_loss.detach().cpu().numpy())
         self.log("val_loss", batch_loss)
+
+        r2_loss = src.pytorch.loss.r2.r2_residual_multivariate(y_hat, y)
+        self._batch_r2_loss.append(r2_loss.detach().cpu().numpy())
+        self.log("r2_loss", r2_loss)
+
         return batch_loss
 
     def on_validation_epoch_end(self) -> None:
@@ -130,6 +137,9 @@ class ModelBase(lightning.LightningModule, ABC):
         self._epoch_loss_val[self.current_epoch] = epoch_loss
         self._batch_loss_val.clear()
 
+        epoch_r2_loss = sum(self._batch_r2_loss) / len(self._batch_r2_loss)
+        self._batch_r2_loss.clear()
+
         if epoch_loss < self._best_loss_val:
             self._best_loss_val = epoch_loss
             local_logger.info("Epoch %d - Best Validation Loss: %.4f", self.current_epoch, epoch_loss)
@@ -137,6 +147,7 @@ class ModelBase(lightning.LightningModule, ABC):
             local_logger.info("Epoch %d - Validation Loss: %.4f", self.current_epoch, epoch_loss)
 
         self.log("val_epoch_loss", epoch_loss, on_step=False, on_epoch=True)
+        self.log("epoch_r2_loss", epoch_r2_loss, on_step=False, on_epoch=True)
 
     def configure_optimizers(self) -> tuple[list[torch.optim.Optimizer], list[torch.optim.lr_scheduler.LRScheduler]]:
         """Return the optimizer."""

@@ -22,8 +22,8 @@ class Dataset(torch.utils.data.Dataset):
     def __init__(
         self,
         source: str,
-        input_cols: list[str],
-        target_cols: list[str],
+        x_stats: str,
+        y_stats: str,
         batch_size: int = 3072,
         buffer_size: int = 10,  # 10 batches
         hold_on_time: float = 0.2,  # 0.2 seconds
@@ -32,6 +32,7 @@ class Dataset(torch.utils.data.Dataset):
         n_group_per_sampling: Optional[int] = None,
         to_tensor: bool = True,
         normalize: bool = False,
+        standardize: bool = False,
         drop_unlearnable: bool = False,
     ) -> None:
         """
@@ -39,8 +40,8 @@ class Dataset(torch.utils.data.Dataset):
 
         Args:
             source (str): The path to the source file
-            input_cols (list[str]): The input columns
-            target_cols (list[str]): The target columns
+            x_stats (str): The statistics of the input columns
+            y_stats (str): The statistics of the target columns
             batch_size (int): The batch size to be used
             buffer_size (int): The buffer size to be used
             hold_on_time (float): The time to wait before checking the buffer again (if the buffer is full)
@@ -49,6 +50,7 @@ class Dataset(torch.utils.data.Dataset):
             n_group_per_sampling (int): The number of groups to be sampled per iteration
             to_tensor (bool): Convert the data to GPU tensors
             normalize (bool): Normalize the data
+            standardize (bool): Standardize the data
             drop_unlearnable (bool): Drop the unlearnable data
 
         Returns:
@@ -56,8 +58,10 @@ class Dataset(torch.utils.data.Dataset):
         """
 
         self._parquet = pq.ParquetFile(source, memory_map=True, buffer_size=10)
-        self._input_cols = input_cols
-        self._target_cols = target_cols
+        self._x_stats = pd.read_parquet(x_stats)
+        self._y_stats = pd.read_parquet(y_stats)
+        self._input_cols = self._x_stats.columns.tolist()
+        self._target_cols = self._y_stats.columns.tolist()
         self._batch_size = batch_size
         # If groups are not provided, use all the groups
         self._groups = groups or list(range(self._parquet.num_row_groups))
@@ -69,12 +73,16 @@ class Dataset(torch.utils.data.Dataset):
         self._hold_on_time = hold_on_time
         self._to_tensor = to_tensor
         self._normalize = normalize
+        self._standardize = standardize
         self._drop_unlearnable = drop_unlearnable
 
         self._n_samples = sum([self._parquet.metadata.row_group(g).num_rows for g in self._groups])
         self._max_idx = self.__len__() - 1
+
         self._x_min = self._x_scaling = self._y_min = self._y_scaling = np.array([])
-        self._init_scaling()
+        self._init_norm_scaling()
+        self._norm_x_mean = self._norm_x_std = self._norm_y_mean = self._norm_y_std = np.array([])
+        self._init_standard_scaling()
 
         self._shutdown_event = threading.Event()
         self._lock = threading.Lock()
@@ -135,61 +143,49 @@ class Dataset(torch.utils.data.Dataset):
 
         return self._input_cols, self._target_cols
 
-    def get_extremes_in_cols(self) -> tuple[pd.Series, pd.Series]:
-        """Get the min and max values of the columns"""
+    def _init_norm_scaling(self) -> None:
+        """Get the scaling values for normalization"""
 
-        cols = self._input_cols + self._target_cols
-        max_values = {col: -np.inf for col in cols}
-        min_values = {col: np.inf for col in cols}
-
-        # Go through metadata of each row group to get the max and min values
-        for row_group in range(self._parquet.num_row_groups):
-            meta = self._parquet.metadata.row_group(row_group)
-            for idx in range(meta.num_columns):
-                col_meta = meta.column(idx)
-                col = col_meta.path_in_schema
-                if col in cols:
-                    max_values[col] = max(max_values[col], col_meta.statistics.max)
-                    min_values[col] = min(min_values[col], col_meta.statistics.min)
-
-        ds_min, ds_max = pd.Series(min_values), pd.Series(max_values)
-        return ds_min, ds_max
-
-    def _init_scaling(self) -> None:
-        """
-        Get the scaling values for normalization
-
-        NOTE: This function read the metadata of the source file to get the max and min values.
-              It therefore is much faster than polars,
-              which go through the whole file to get the max and min values.
-        """
-
-        ds_min, ds_max = self.get_extremes_in_cols()
-
-        self._x_min = ds_min[self._input_cols].values
-        self._x_scaling = ds_max[self._input_cols].values - self._x_min
+        self._x_min = self._x_stats.loc["min"].values
+        self._x_scaling = self._x_stats.loc["max"].values - self._x_min
         if self._drop_unlearnable:
             unlearnable_idx = np.nonzero(self._x_scaling == 0)[0]
             unlearnable_cols = [self._input_cols[i] for i in unlearnable_idx]
             self._input_cols = [col for col in self._input_cols if col not in unlearnable_cols]
-            self._x_min = ds_min[self._input_cols].values
-            self._x_scaling = ds_max[self._input_cols].values - self._x_min
+            self._x_min = self._x_stats.loc["min"].values
+            self._x_scaling = self._x_stats.loc["max"].values - self._x_min
             local_logger.warning(
                 "Dropped unlearnable columns: %s. Please check whether this is expected.", unlearnable_cols
             )
             local_logger.info("Updated input columns: %s.", self._input_cols)
+
         else:
             self._x_scaling[self._x_scaling == 0] = 1.0
 
-        self._y_min = ds_min[self._target_cols].values
-        self._y_scaling = ds_max[self._target_cols].values - self._y_min
-        if np.any(self._y_scaling == 0):
+        self._y_min = self._y_stats.loc["min"].values
+        self._y_scaling = self._y_stats.loc["max"].values - self._y_min
+        if any(self._y_scaling == 0):
             unlearnable_idx = np.nonzero(self._y_scaling == 0)[0]
             local_logger.warning(
                 "Unlearnable columns in the target: %s. Please check whether this is expected.",
                 [self._target_cols[i] for i in unlearnable_idx],
             )
             self._y_scaling[self._y_scaling == 0] = 1.0
+
+    def _init_standard_scaling(self) -> None:
+        """Get the scaling values for standardization"""
+
+        if not self._normalize:
+            self._norm_x_mean = self._x_stats.loc["mean"].values
+            self._norm_x_std = self._x_stats.loc["std"].values
+            self._norm_y_mean = self._y_stats.loc["mean"].values
+            self._norm_y_std = self._y_stats.loc["std"].values
+
+        else:
+            self._norm_x_mean = self._x_stats.loc["norm_mean"].values
+            self._norm_x_std = self._x_stats.loc["norm_std"].values
+            self._norm_y_mean = self._y_stats.loc["norm_mean"].values
+            self._norm_y_std = self._y_stats.loc["norm_std"].values
 
     def _get_rows_group(self, size: int) -> np.ndarray:
         """Return a random group"""
@@ -204,6 +200,10 @@ class Dataset(torch.utils.data.Dataset):
 
         if self._normalize:
             return self._normalize_batch(x, y)
+
+        if self._standardize:
+            return self._standardize_batch(x, y)
+
         return x, y
 
     def _normalize_batch(self, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -211,6 +211,13 @@ class Dataset(torch.utils.data.Dataset):
 
         x = (x - self._x_min) / self._x_scaling
         y = (y - self._y_min) / self._y_scaling
+        return x, y
+
+    def _standardize_batch(self, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Standardize the data"""
+
+        x = (x - self._norm_x_mean) / self._norm_x_std
+        y = (y - self._norm_y_mean) / self._norm_y_std
         return x, y
 
     def _put_batch_to_tensor_buffer(self, x: np.ndarray, y: np.ndarray) -> None:
@@ -293,18 +300,30 @@ class Dataset(torch.utils.data.Dataset):
             return torch.Tensor(x).to(src.env.DEVICE), torch.Tensor(y).to(src.env.DEVICE)
         return x, y
 
-    def normalize_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def preprocess_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Normalize the data"""
 
         x = df[self._input_cols].values
-        x = (x - self._x_min) / self._x_scaling
+
+        if self._normalize:
+            x = (x - self._x_min) / self._x_scaling
+
+        if self._standardize:
+            x = (x - self._norm_x_mean) / self._norm_x_std
+
         df[self._input_cols] = x
         return df
 
-    def denormalize_targets(self, df: pd.DataFrame) -> pd.DataFrame:
+    def postprocess_targets(self, df: pd.DataFrame) -> pd.DataFrame:
         """Denormalize the data"""
 
         y = df[self._target_cols].values
-        y = y * self._y_scaling + self._y_min
+
+        if self._normalize:
+            y = y * self._y_scaling + self._y_min
+
+        if self._standardize:
+            y = y * self._norm_y_std + self._norm_y_mean
+
         df[self._target_cols] = y
         return df
