@@ -35,7 +35,7 @@ VALIDATION_N_GROUP_PER_SAMPLING = 1
 # N_BATCH_PER_SAMPLING: number of batches being sampled in each iteration
 TRAINING_N_BATCH_PER_SAMPLING = 100
 VALIDATION_N_BATCH_PER_SAMPLING = 100
-IS_NORMALIZED = False
+IS_NORMALIZED = True
 IS_STANDARDIZED = True
 
 # Compute and save dataset statistics if not already done

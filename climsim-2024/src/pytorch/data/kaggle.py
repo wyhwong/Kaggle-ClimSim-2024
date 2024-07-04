@@ -55,7 +55,7 @@ def output_compressed_parquet(
         columns=src.schemas.climsim.OUTPUT_COLUMNS,
     )
     df_output = dataset.postprocess_targets(df_output)
-    df_output["sample_id"] = df_input["sample_id"]
+    df_output = pd.concat([df_input[["sample_id"]], df_output], axis=1)
 
     for col in src.schemas.climsim.OUTPUT_COLUMNS:
         df_output[col] *= weights[col]
