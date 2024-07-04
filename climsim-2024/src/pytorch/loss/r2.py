@@ -7,7 +7,7 @@ import src.logger
 local_logger = src.logger.get_logger(__name__)
 
 
-def r2_score_multivariate(y_hat: torch.Tensor, y: torch.Tensor) -> torch.tensor:
+def r2_score_multivariate(y_hat: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     """
     Calculate the R2 score for multivariate targets.
 

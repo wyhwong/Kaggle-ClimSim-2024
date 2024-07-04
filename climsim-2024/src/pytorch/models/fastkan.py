@@ -143,6 +143,7 @@ class FastKAN(ModelBase):
     def __init__(
         self,
         layers_hidden: list[int],
+        steps_per_epoch: int,
         loss_fn: Optional[Callable] = None,
         grid_min: float = -2.0,
         grid_max: float = 2.0,
@@ -154,6 +155,7 @@ class FastKAN(ModelBase):
         """
         Args:
             layers_hidden: list of hidden layer sizes
+            steps_per_epoch: number of steps per epoch
             loss_fn: loss function
             grid_min: minimum value of the grid
             grid_max: maximum value of the grid
@@ -166,7 +168,7 @@ class FastKAN(ModelBase):
             None
         """
 
-        super().__init__(loss_fn=loss_fn)
+        super().__init__(steps_per_epoch=steps_per_epoch, loss_fn=loss_fn)
 
         self._layers = nn.ModuleList(
             [

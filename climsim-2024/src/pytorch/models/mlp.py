@@ -15,6 +15,7 @@ class MLP(ModelBase):
 
     def __init__(
         self,
+        steps_per_epoch: int,
         layers_hidden: Optional[nn.Sequential] = None,
         loss_fn: Optional[Callable] = None,
     ) -> None:
@@ -38,6 +39,7 @@ class MLP(ModelBase):
                 - Output layer: 368 neuron (Output target of ClimSim Dataset)
 
         Args:
+            steps_per_epoch (int): Number of steps per epoch
             layers (Optional[nn.Sequential]): Custom layers for the model
             loss_fn (Optional[Callable]): Loss function for training
 
@@ -45,7 +47,7 @@ class MLP(ModelBase):
             None
         """
 
-        super().__init__(loss_fn=loss_fn)
+        super().__init__(steps_per_epoch=steps_per_epoch, loss_fn=loss_fn)
 
         self._layers = layers_hidden or nn.Sequential(
             nn.Linear(556, 768),

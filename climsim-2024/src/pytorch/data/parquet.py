@@ -24,15 +24,15 @@ class Dataset(torch.utils.data.Dataset):
         source: str,
         x_stats: str,
         y_stats: str,
-        batch_size: int = 3072,
-        buffer_size: int = 10,  # 10 batches
+        batch_size: int = src.env.BATCH_SIZE,
+        buffer_size: int = src.env.BUFFER_SIZE,
         hold_on_time: float = 0.2,  # 0.2 seconds
         groups: Optional[list[int]] = None,
-        n_batch_per_sampling: Optional[int] = None,
-        n_group_per_sampling: Optional[int] = None,
+        n_batch_per_sampling: Optional[int] = src.env.N_BATCH_PER_SAMPLING,
+        n_group_per_sampling: Optional[int] = src.env.N_GROUP_PER_SAMPLING,
         to_tensor: bool = True,
-        normalize: bool = False,
-        standardize: bool = False,
+        normalize: bool = src.env.IS_NORMALIZED,
+        standardize: bool = src.env.IS_STANDARDIZED,
     ) -> None:
         """
         Initialize the Dataset

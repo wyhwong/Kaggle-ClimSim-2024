@@ -14,8 +14,8 @@ local_logger = src.logger.get_logger(__name__)
 def get_default_trainer(
     deterministic: bool,
     model_name: str,
-    max_epochs: int = 100,
-    max_time: datetime.timedelta = datetime.timedelta(hours=1),
+    max_epochs: int = src.env.N_EPOCHS,
+    max_time: datetime.timedelta = datetime.timedelta(hours=src.env.MAXIMUM_TRAINING_TIME_IN_HOUR),
     log_every_n_steps=10,
     check_val_every_n_epoch: int = 3,
     callbacks: Optional[list[lightning.pytorch.callbacks.Callback]] = None,

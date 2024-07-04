@@ -1,5 +1,21 @@
-import datetime
 import os
+
+os.environ["RANDOM_SEED"] = "2024"
+os.environ["INITIAL_LR"] = "1e-4"
+os.environ["MAXIMUM_LR"] = "1e-3"
+os.environ["N_WARMUP_EPOCHS"] = "1"
+os.environ["N_DECAY_EPOCHS"] = "22"
+os.environ["ALPHA"] = "0.1"
+os.environ["BATCH_SIZE"] = "2048"
+os.environ["BUFFER_SIZE"] = "100"
+os.environ["N_GROUP_PER_SAMPLING"] = "3"
+os.environ["N_BATCH_PER_SAMPLING"] = "100"
+os.environ["IS_NORMALIZED"] = "False"
+os.environ["IS_STANDARDIZED"] = "True"
+os.environ["N_EPOCHS"] = "25"
+os.environ["MAXIMUM_TRAINING_TIME_IN_HOUR"] = "72"
+
+import datetime
 import random
 from typing import Optional
 
@@ -23,20 +39,8 @@ Y_STATS_PATH = "/home/data/y_stats.parquet"
 OUTPUT_DIR = "./results"
 check_and_create_dir(OUTPUT_DIR)
 MODEL_NAME = "climsim_best_model"
-BATCH_SIZE = 4096
-N_EPOCHS = 12
 TRAINING_SAMPLE_FRAC = 1.0
-# BUFFER_SIZE: number of batches being preloaded in memory
-TRAINING_BUFFER_SIZE = 100
-VALIDATION_BUFFER_SIZE = 100
-# N_GROUP_PER_SAMPLING: number of groups being sampled in each iteration
-TRAINING_N_GROUP_PER_SAMPLING = 3
-VALIDATION_N_GROUP_PER_SAMPLING = 1
-# N_BATCH_PER_SAMPLING: number of batches being sampled in each iteration
-TRAINING_N_BATCH_PER_SAMPLING = 100
-VALIDATION_N_BATCH_PER_SAMPLING = 100
-IS_NORMALIZED = True
-IS_STANDARDIZED = True
+
 
 # Compute and save dataset statistics if not already done
 if not (os.path.exists(X_STATS_PATH) and os.path.exists(Y_STATS_PATH)):
@@ -48,19 +52,13 @@ if not (os.path.exists(X_STATS_PATH) and os.path.exists(Y_STATS_PATH)):
 class ClimSimDataModule(LightningDataModule):
     """Data module for the ClimSim dataset."""
 
-    def __init__(self, data_path: str, batch_size: int) -> None:
+    def __init__(self, data_path: str) -> None:
         """Initialize the data module."""
 
         super().__init__()
 
-        self._data_path = data_path
-        self._batch_size = batch_size
-
-    def setup(self, stage: Optional[str] = None):
-
-        # Use full dataset for training
-        parquet = pq.ParquetFile(self._data_path, memory_map=True, buffer_size=10)
-        all_groups = list(range(0, parquet.num_row_groups))
+        self._parquet = pq.ParquetFile(data_path, memory_map=True, buffer_size=10)
+        all_groups = list(range(0, self._parquet.num_row_groups))
 
         # NOTE: Here we use all groups for training and validation
         train_groups = all_groups
@@ -71,30 +69,16 @@ class ClimSimDataModule(LightningDataModule):
         # val_groups = list(set(all_groups) - set(train_groups))
 
         self.train = Dataset(
-            source=self._data_path,
+            source=data_path,
             x_stats=X_STATS_PATH,
             y_stats=Y_STATS_PATH,
-            batch_size=self._batch_size,
-            buffer_size=TRAINING_BUFFER_SIZE,
             groups=train_groups,
-            n_group_per_sampling=TRAINING_N_GROUP_PER_SAMPLING,
-            n_batch_per_sampling=TRAINING_N_BATCH_PER_SAMPLING,
-            to_tensor=True,
-            normalize=IS_NORMALIZED,
-            standardize=IS_STANDARDIZED,
         )
         self.val = Dataset(
-            source=self._data_path,
+            source=data_path,
             x_stats=X_STATS_PATH,
             y_stats=Y_STATS_PATH,
-            batch_size=self._batch_size,
-            buffer_size=VALIDATION_BUFFER_SIZE,
             groups=val_groups,
-            n_group_per_sampling=VALIDATION_N_GROUP_PER_SAMPLING,
-            n_batch_per_sampling=VALIDATION_N_BATCH_PER_SAMPLING,
-            to_tensor=True,
-            normalize=IS_NORMALIZED,
-            standardize=IS_STANDARDIZED,
         )
 
     def train_dataloader(self):
@@ -117,12 +101,11 @@ class ClimSimDataModule(LightningDataModule):
 def train_model():
     """Train the model."""
 
-    model = CNN()
-    datamodule = ClimSimDataModule(TRAINSET_DATA_PATH, BATCH_SIZE)
+    datamodule = ClimSimDataModule(TRAINSET_DATA_PATH)
+    model = CNN(steps_per_epoch=len(datamodule.train))
     trainer = get_default_trainer(
         deterministic=False,
         model_name=MODEL_NAME,
-        max_epochs=N_EPOCHS,
         max_time=datetime.timedelta(days=3),
         check_val_every_n_epoch=3,
     )

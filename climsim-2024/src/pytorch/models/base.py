@@ -1,3 +1,4 @@
+import math
 from abc import ABC, abstractmethod
 from typing import Callable, Optional
 
@@ -5,6 +6,7 @@ import lightning
 import torch
 from torch import nn
 
+import src.env
 import src.logger
 import src.pytorch.loss.r2
 
@@ -15,13 +17,13 @@ local_logger = src.logger.get_logger(__name__)
 class ModelBase(lightning.LightningModule, ABC):
     """Multilayer perceptron model for regression."""
 
-    def __init__(self, loss_fn: Optional[Callable] = None) -> None:
+    def __init__(self, steps_per_epoch: int, loss_fn: Optional[Callable] = None) -> None:
         """
         Initialize the model.
 
         Args:
-            loss_train: Loss function for training
-            loss_val: Loss function for validation
+            steps_per_epoch (int): Number of steps per epoch
+            loss_fn (Optional[Callable], optional): Loss function. Defaults to None.
 
         Returns:
             None
@@ -29,6 +31,7 @@ class ModelBase(lightning.LightningModule, ABC):
 
         super().__init__()
 
+        self._steps_per_epoch = steps_per_epoch
         self._loss_fn = loss_fn or nn.functional.mse_loss
 
         self._batch_loss_train: list[float] = []
@@ -44,11 +47,45 @@ class ModelBase(lightning.LightningModule, ABC):
     def __post_init__(self) -> None:
         """Post initialization."""
 
+        def lr_lambda(
+            step: int,
+            initial_lr: float,
+            maximum_lr: float,
+            decay_steps: int,
+            warmup_steps: int,
+            alpha: float,
+        ):
+            """Learning rate schedule."""
+
+            if maximum_lr is None:
+                maximum_lr = initial_lr
+
+            if step < warmup_steps:
+                # Linear warmup phase
+                completed_fraction = step / warmup_steps
+                total_delta = maximum_lr - initial_lr
+                return initial_lr + completed_fraction * total_delta
+            else:
+                # Cosine decay phase
+                step_in_decay_phase = step - warmup_steps
+                step_in_decay_phase = min(step_in_decay_phase, decay_steps)
+                cosine_decay = 0.5 * (1 + math.cos(math.pi * step_in_decay_phase / decay_steps))
+                decayed = (1 - alpha) * cosine_decay + alpha
+                return maximum_lr * decayed
+
         self._optimizers: list[torch.optim.Optimizer] = [torch.optim.Adam(self.parameters(), lr=1e-3)]
         self._schedulers: list[torch.optim.lr_scheduler.LRScheduler] = [
-            # torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.99) for optimizer in self._optimizers
-            # torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=1e-2, total_steps=600)
-            torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=12, eta_min=1e-7)
+            torch.optim.lr_scheduler.LambdaLR(
+                optimizer,
+                lr_lambda=lambda step: lr_lambda(
+                    step=step,
+                    initial_lr=src.env.INITIAL_LR,
+                    maximum_lr=src.env.MAXIMUM_LR,
+                    warmup_steps=self._steps_per_epoch * src.env.N_WARMUP_EPOCHS,
+                    decay_steps=self._steps_per_epoch * src.env.N_DECAY_EPOCHS,
+                    alpha=src.env.ALPHA,
+                ),
+            )
             for optimizer in self._optimizers
         ]
 
