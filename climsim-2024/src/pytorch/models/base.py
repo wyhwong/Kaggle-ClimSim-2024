@@ -87,7 +87,9 @@ class ModelBase(lightning.LightningModule, ABC):
                 decayed = (1 - alpha) * cosine_decay + alpha
                 return maximum_lr * decayed
 
-        self._optimizers: list[torch.optim.Optimizer] = [torch.optim.Adam(self.parameters(), lr=1e-3)]
+        self._optimizers: list[torch.optim.Optimizer] = [
+            torch.optim.Adam(self.parameters(), lr=src.env.INITIAL_LR),
+        ]
         self._schedulers: list[torch.optim.lr_scheduler.LRScheduler] = [
             torch.optim.lr_scheduler.LambdaLR(
                 optimizer,
