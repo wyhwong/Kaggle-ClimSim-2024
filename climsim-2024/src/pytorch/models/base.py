@@ -54,8 +54,22 @@ class ModelBase(lightning.LightningModule, ABC):
             decay_steps: int,
             warmup_steps: int,
             alpha: float,
-        ):
-            """Learning rate schedule."""
+        ) -> float:
+            """Learning rate schedule.
+            This implementation is based on CosineDecay LR Schedule from TensorFlow.
+            https://www.tensorflow.org/api_docs/python/tf/keras/optimizers/schedules/CosineDecay
+
+            Args:
+                step (int): The current step
+                initial_lr (float): The initial learning rate
+                maximum_lr (float): The maximum learning rate
+                decay_steps (int): The number of steps for decay
+                warmup_steps (int): The number of steps for warmup
+                alpha (float): The alpha parameter
+
+            Returns:
+                float: The learning rate
+            """
 
             if maximum_lr is None:
                 maximum_lr = initial_lr
@@ -101,15 +115,7 @@ class ModelBase(lightning.LightningModule, ABC):
 
     @abstractmethod
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass of the model.
-
-        Args:
-            x (torch.Tensor): Input tensor
-
-        Returns:
-            torch.Tensor: Output tensor
-        """
+        """Forward pass of the model."""
 
     def training_step(
         self,
