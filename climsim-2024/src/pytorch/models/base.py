@@ -87,8 +87,17 @@ class ModelBase(lightning.LightningModule, ABC):
                 decayed = (1 - alpha) * cosine_decay + alpha
                 return maximum_lr * decayed
 
+        warmup_steps = self._steps_per_epoch * src.env.N_WARMUP_EPOCHS
+        decay_steps = self._steps_per_epoch * src.env.N_DECAY_EPOCHS
+
+        local_logger.info("Initial Learning Rate: %.4f", src.env.INITIAL_LR)
+        local_logger.info("Maximum Learning Rate: %.4f", src.env.MAXIMUM_LR)
+        local_logger.info("Warmup Steps: %d", warmup_steps)
+        local_logger.info("Decay Steps: %d", decay_steps)
+        local_logger.info("Alpha: %.4f", src.env.ALPHA)
+
         self._optimizers: list[torch.optim.Optimizer] = [
-            torch.optim.Adam(self.parameters(), lr=src.env.INITIAL_LR),
+            torch.optim.Adam(self.parameters(), lr=1.0),
         ]
         self._schedulers: list[torch.optim.lr_scheduler.LRScheduler] = [
             torch.optim.lr_scheduler.LambdaLR(
@@ -97,8 +106,8 @@ class ModelBase(lightning.LightningModule, ABC):
                     step=step,
                     initial_lr=src.env.INITIAL_LR,
                     maximum_lr=src.env.MAXIMUM_LR,
-                    warmup_steps=self._steps_per_epoch * src.env.N_WARMUP_EPOCHS,
-                    decay_steps=self._steps_per_epoch * src.env.N_DECAY_EPOCHS,
+                    warmup_steps=warmup_steps,
+                    decay_steps=decay_steps,
                     alpha=src.env.ALPHA,
                 ),
             )
@@ -194,7 +203,16 @@ class ModelBase(lightning.LightningModule, ABC):
         self.log("val_epoch_loss", epoch_loss, on_step=False, on_epoch=True)
         self.log("epoch_r2_loss", epoch_r2_loss, on_step=False, on_epoch=True)
 
-    def configure_optimizers(self) -> tuple[list[torch.optim.Optimizer], list[torch.optim.lr_scheduler.LRScheduler]]:
+    def configure_optimizers(self):
         """Return the optimizer."""
 
-        return self._optimizers, self._schedulers
+        schedulers = [
+            {
+                "scheduler": scheduler,
+                "interval": "step",  # Step every batch
+                "frequency": 1,
+            }
+            for scheduler in self._schedulers
+        ]
+
+        return self._optimizers, schedulers
