@@ -307,11 +307,12 @@ class Dataset(torch.utils.data.Dataset):
         # NOTE:
         # We did normalization first and then standardization
         # So here we first unstardardize and then denormalize
-
         if self._is_standardize:
+            y[self._y_std_scaling == 1] = 0.0
             y = y * self._y_std_scaling + self._y_std_mean
 
         if self._is_normalize:
+            y[self._y_norm_scaling == 1] = 0.0
             y = y * self._y_norm_scaling + self._y_min
 
         df[self._target_cols] = y

@@ -54,7 +54,7 @@ def output_compressed_parquet(
         np.concatenate(outputs_set, axis=0),
         columns=src.schemas.climsim.OUTPUT_COLUMNS,
     )
-    df_output = dataset.postprocess_targets(df_output)
+    df_output = dataset.postprocess_targets(df=df_output)
     df_output = pd.concat([df_input[["sample_id"]], df_output], axis=1)
 
     for col in src.schemas.climsim.OUTPUT_COLUMNS:
