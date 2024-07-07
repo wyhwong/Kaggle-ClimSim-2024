@@ -178,9 +178,6 @@ class Dataset(torch.utils.data.Dataset):
         """Sample from a DataFrame"""
 
         samples = df.sample(self._batch_size)
-        # Drop the samples from the DataFrame
-        df.drop(samples.index, inplace=True)
-
         x, y = samples[self._input_cols].values, samples[self._target_cols].values
 
         if self._is_normalize:
@@ -225,7 +222,7 @@ class Dataset(torch.utils.data.Dataset):
             ).to_pandas()
             local_logger.debug("Loaded the row groups for sampling...")
 
-            while len(df) > self._batch_size:
+            for _ in range(len(df) // self._batch_size):
                 if self._shutdown_event.is_set():
                     break
 
