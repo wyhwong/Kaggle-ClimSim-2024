@@ -177,7 +177,10 @@ class Dataset(torch.utils.data.Dataset):
     def _sample_from_df(self, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
         """Sample from a DataFrame"""
 
-        samples = df.sample(self._batch_size).reset_index(drop=True)
+        samples = df.sample(self._batch_size)
+        # Drop the samples from the DataFrame
+        df.drop(samples.index, inplace=True)
+
         x, y = samples[self._input_cols].values, samples[self._target_cols].values
 
         if self._is_normalize:
@@ -220,6 +223,7 @@ class Dataset(torch.utils.data.Dataset):
             df = self._parquet.read_row_groups(
                 row_groups=self._get_rows_group(self._n_group_per_sampling),
             ).to_pandas()
+            local_logger.debug("Loaded the row groups for sampling...")
 
             while len(df) > self._batch_size:
                 if self._shutdown_event.is_set():
