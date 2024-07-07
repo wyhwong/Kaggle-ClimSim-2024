@@ -28,8 +28,6 @@ BATCH_SIZE = int(os.getenv("BATCH_SIZE", "2048"))
 BUFFER_SIZE = int(os.getenv("BUFFER_SIZE", "100"))
 # N_GROUP_PER_SAMPLING: number of groups being sampled in each iteration
 N_GROUP_PER_SAMPLING = int(os.getenv("N_GROUP_PER_SAMPLING", "3"))
-# N_BATCH_PER_SAMPLING: number of batches being sampled in each iteration
-N_BATCH_PER_SAMPLING = int(os.getenv("N_BATCH_PER_SAMPLING", "100"))
 IS_NORMALIZED = bool(os.getenv("IS_NORMALIZED", "False"))
 IS_STANDARDIZED = bool(os.getenv("IS_STANDARDIZED", "True"))
 
