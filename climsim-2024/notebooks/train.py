@@ -6,10 +6,9 @@ os.environ["MAXIMUM_LR"] = "1e-3"
 os.environ["N_WARMUP_EPOCHS"] = "1"
 os.environ["N_DECAY_EPOCHS"] = "22"
 os.environ["ALPHA"] = "0.1"
-os.environ["BATCH_SIZE"] = "2048"
+os.environ["BATCH_SIZE"] = "1024"
 os.environ["BUFFER_SIZE"] = "100"
 os.environ["N_GROUP_PER_SAMPLING"] = "3"
-os.environ["N_BATCH_PER_SAMPLING"] = "100"
 os.environ["IS_NORMALIZED"] = "False"
 os.environ["IS_STANDARDIZED"] = "True"
 os.environ["N_EPOCHS"] = "25"
@@ -27,7 +26,6 @@ from src.pytorch.data.parquet import Dataset
 from src.pytorch.data.statistics import compute_dataset_statistics
 from src.pytorch.models.cnn import CNN
 from src.pytorch.models.utils import get_default_trainer
-from src.utils import check_and_create_dir
 
 
 torch.set_float32_matmul_precision("highest")
@@ -36,8 +34,6 @@ torch.set_float32_matmul_precision("highest")
 TRAINSET_DATA_PATH = "/home/data/train.parquet"
 X_STATS_PATH = "/home/data/x_stats.parquet"
 Y_STATS_PATH = "/home/data/y_stats.parquet"
-OUTPUT_DIR = "./results"
-check_and_create_dir(OUTPUT_DIR)
 MODEL_NAME = "climsim_best_model"
 TRAINING_SAMPLE_FRAC = 1.0
 
