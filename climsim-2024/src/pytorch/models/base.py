@@ -93,7 +93,7 @@ class ModelBase(lightning.LightningModule, ABC):
         decay_steps = self._steps_per_epoch * src.env.N_DECAY_EPOCHS
 
         self._optimizers: list[torch.optim.Optimizer] = [
-            torch.optim.Adam(self.parameters(), lr=1.0),
+            torch.optim.Adam(self.parameters(), lr=1.0, eps=1e-7),
         ]
         self._schedulers: list[torch.optim.lr_scheduler.LRScheduler] = [
             torch.optim.lr_scheduler.LambdaLR(
