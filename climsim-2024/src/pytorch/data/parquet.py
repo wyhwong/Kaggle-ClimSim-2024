@@ -317,3 +317,34 @@ class Dataset(torch.utils.data.Dataset):
 
         df[self._target_cols] = y
         return df
+
+    def generate_tiny_dataset(self, n_samples: int = 100) -> pd.DataFrame:
+        """Generate a tiny dataset"""
+
+        n_samples_per_group = n_samples // len(self._groups)
+        df = pd.DataFrame()
+
+        for g in self._groups:
+            df = pd.concat(
+                [
+                    df,
+                    self._parquet.read_row_group(g).to_pandas().sample(n_samples_per_group),
+                ],
+                ignore_index=True,
+            )
+
+        remaning_samples = n_samples - len(df)
+        if remaning_samples > 0:
+            df = pd.concat(
+                [
+                    df,
+                    self._parquet.read_row_groups(
+                        row_groups=self._get_rows_group(1),
+                    )
+                    .to_pandas()
+                    .sample(remaning_samples),
+                ],
+                ignore_index=True,
+            )
+
+        return df
