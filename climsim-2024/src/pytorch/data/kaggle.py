@@ -20,7 +20,7 @@ def output_compressed_parquet(
     input_cols: list[str],
     weights: pd.DataFrame,
     output_dir: str = ".",
-) -> None:
+) -> pd.DataFrame:
     """
     Output the submission file in the format of a gzipped parquet file.
     TODO: Replace pandas with polars for better performance.
@@ -34,7 +34,7 @@ def output_compressed_parquet(
         output_dir (str): The output directory
 
     Returns:
-        None
+        pd.DataFrame: The output data
     """
 
     df_input = dataset.preprocess_features(df_input)
@@ -65,3 +65,5 @@ def output_compressed_parquet(
         index=False,
         engine="pyarrow",
     )
+
+    return df_output

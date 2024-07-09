@@ -56,7 +56,7 @@ def get_default_trainer(
             ModelCheckpoint(
                 monitor="val_loss",
                 dirpath="./models",
-                filename=model_name + "-epoch{epoch:02d}",
+                filename=model_name + "-{epoch:02d}",
                 save_top_k=1,
                 save_last=True,
                 verbose=True,
