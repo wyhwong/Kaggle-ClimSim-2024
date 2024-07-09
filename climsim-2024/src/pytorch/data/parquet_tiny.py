@@ -30,8 +30,10 @@ class TinyDataset(torch.utils.data.Dataset):
 
         self.x_mean = self._x_stats.loc["mean"].to_numpy()
         self.x_std = self._x_stats.loc["std"].to_numpy()
+        self.x_std[self.x_std == 0] = 1.0
         self.y_mean = self._y_stats.loc["mean"].to_numpy()
         self.y_std = self._y_stats.loc["std"].to_numpy()
+        self.y_std[self.y_std == 0] = 1.0
 
         local_logger.info("Dataset loaded.")
 

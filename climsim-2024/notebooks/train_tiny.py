@@ -94,7 +94,7 @@ def train_model():
         deterministic=False,
         model_name=MODEL_NAME,
         max_time=datetime.timedelta(days=3),
-        check_val_every_n_epoch=3,
+        check_val_every_n_epoch=1,
     )
     trainer.fit(
         model=model,
