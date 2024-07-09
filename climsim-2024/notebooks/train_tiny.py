@@ -1,17 +1,8 @@
 import os
 
 os.environ["RANDOM_SEED"] = "2024"
-os.environ["INITIAL_LR"] = "1e-4"
-os.environ["MAXIMUM_LR"] = "1e-3"
-os.environ["N_WARMUP_EPOCHS"] = "1"
-os.environ["N_DECAY_EPOCHS"] = "7"
-os.environ["ALPHA"] = "0.1"
 os.environ["BATCH_SIZE"] = "1024"
-os.environ["BUFFER_SIZE"] = "100"
-os.environ["N_GROUP_PER_SAMPLING"] = "3"
-os.environ["IS_NORMALIZED"] = "False"
-os.environ["IS_STANDARDIZED"] = "True"
-os.environ["N_EPOCHS"] = "8"
+os.environ["N_EPOCHS"] = "50"
 os.environ["MAXIMUM_TRAINING_TIME_IN_HOUR"] = "72"
 
 import datetime
@@ -24,7 +15,7 @@ from torch.utils.data import random_split
 import src.env
 from src.pytorch.data.parquet_tiny import TinyDataset
 from src.pytorch.data.statistics import compute_dataset_statistics
-from src.pytorch.models.cnn import CNN
+from src.pytorch.models.mlp import MLP
 from src.pytorch.models.utils import get_default_trainer
 
 
@@ -89,7 +80,11 @@ def train_model():
     """Train the model."""
 
     datamodule = ClimSimDataModule(TRAINSET_DATA_PATH)
-    model = CNN(steps_per_epoch=len(datamodule.train))
+    model = MLP(steps_per_epoch=len(datamodule.train), layers_hidden=[556, 1024, 512, 368])
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    total_iters = int(src.env.N_EPOCHS * len(datamodule.train) / src.env.BATCH_SIZE)
+    scheduler = torch.optim.lr_scheduler.PolynomialLR(optimizer, power=1.0, total_iters=total_iters)
+    model.replace_optimizers(optimizers=[optimizer], schedulers=[scheduler])
     trainer = get_default_trainer(
         deterministic=False,
         model_name=MODEL_NAME,
