@@ -136,10 +136,11 @@ class ModelBase(lightning.LightningModule, ABC):
     ) -> torch.Tensor:
         """Common step for training and validation."""
 
-        # FIXME: Originally it should be X, y = batch
-        # However, we are using a DataLoader with BatchSampler
-        _x, _y = batch
-        x, y = _x[0], _y[0]
+        x, y = batch
+        # Unpack the batch if it contains only one element
+        if len(x) == 1:
+            x, y = x[0], y[0]
+
         y_hat = self.forward(x)
 
         batch_loss = self._loss_fn(y_hat, y)
