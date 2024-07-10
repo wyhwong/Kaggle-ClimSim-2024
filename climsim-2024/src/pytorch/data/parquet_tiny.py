@@ -1,6 +1,10 @@
+from typing import Optional
+
+import numpy as np
 import pandas as pd
 import torch
 
+import src.env
 import src.logger
 
 
@@ -15,24 +19,24 @@ class TinyDataset(torch.utils.data.Dataset):
 
         super().__init__()
 
-        self._x_stats = pd.read_parquet(x_stats)
-        self._y_stats = pd.read_parquet(y_stats)
-        self._input_cols = self._x_stats.columns.tolist()
-        self._target_cols = self._y_stats.columns.tolist()
+        self.x_stats = pd.read_parquet(x_stats)
+        self.y_stats = pd.read_parquet(y_stats)
+        self.input_cols = self.x_stats.columns.tolist()
+        self.output_cols = self.y_stats.columns.tolist()
 
-        self.x = data[self._input_cols]
+        self.x = data[self.input_cols]
         self.x = self.x.to_numpy()
         self.x = torch.from_numpy(self.x)
 
-        self.y = data[self._target_cols]
+        self.y = data[self.output_cols]
         self.y = self.y.to_numpy()
         self.y = torch.from_numpy(self.y)
 
-        self.x_mean = self._x_stats.loc["mean"].to_numpy()
-        self.x_std = self._x_stats.loc["std"].to_numpy()
+        self.x_mean = self.x_stats.loc["mean"].to_numpy()
+        self.x_std = self.x_stats.loc["std"].to_numpy()
         self.x_std[self.x_std == 0] = 1.0
-        self.y_mean = self._y_stats.loc["mean"].to_numpy()
-        self.y_std = self._y_stats.loc["std"].to_numpy()
+        self.y_mean = self.y_stats.loc["mean"].to_numpy()
+        self.y_std = self.y_stats.loc["std"].to_numpy()
         self.y_std[self.y_std == 0] = 1.0
 
         local_logger.info("Dataset loaded.")
@@ -55,3 +59,44 @@ class TinyDataset(torch.utils.data.Dataset):
         """Return the number of samples in the dataset"""
 
         return len(self.y)
+
+    def get_batch(
+        self, size: Optional[int] = None, is_tensor: bool = False
+    ) -> tuple[np.ndarray, np.ndarray] | tuple[torch.Tensor, torch.Tensor]:
+        """Return a batch of samples"""
+
+        idx = np.random.choice(len(self.y), size=size, replace=False)
+        x = self.x[idx]
+        y = self.y[idx]
+
+        x = (x - self.x_mean) / self.x_std
+        y = (y - self.y_mean) / self.y_std
+
+        x = x.to(torch.float32)
+        y = y.to(torch.float32)
+
+        if is_tensor:
+            return x.to(src.env.DEVICE), y.to(src.env.DEVICE)
+
+        return x.numpy(), y.numpy()
+
+    def preprocess_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Normalize the data"""
+
+        x = df[self.input_cols].values
+
+        x = (x - self.x_mean) / self.x_std
+
+        df[self.input_cols] = x
+        return df
+
+    def postprocess_targets(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Denormalize the data"""
+
+        y = df[self.output_cols].values
+
+        y[:, self.y_std == 1] = 0.0
+        y = y * self.y_std + self.y_mean
+
+        df[self.output_cols] = y
+        return df
