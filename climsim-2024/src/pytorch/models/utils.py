@@ -70,6 +70,7 @@ def get_default_trainer(
                 dirpath=f"{base_dirpath}/{model_name}/{version}",
                 filename=model_name + "-{epoch:02d}",
                 every_n_epochs=5,
+                save_top_k=-1,
                 verbose=True,
             ),
         ]
