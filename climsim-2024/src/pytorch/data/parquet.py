@@ -24,16 +24,14 @@ class Dataset(torch.utils.data.Dataset):
         source: str,
         x_stats: str,
         y_stats: str,
-        batch_size: int = 3072,
-        buffer_size: int = 10,  # 10 batches
+        batch_size: int = src.env.BATCH_SIZE,
+        buffer_size: int = src.env.BUFFER_SIZE,
         hold_on_time: float = 0.2,  # 0.2 seconds
+        is_to_tensor: bool = True,
+        is_normalize: bool = src.env.IS_NORMALIZED,
+        is_standardize: bool = src.env.IS_STANDARDIZED,
+        n_group_per_sampling: Optional[int] = src.env.N_GROUP_PER_SAMPLING,
         groups: Optional[list[int]] = None,
-        n_batch_per_sampling: Optional[int] = None,
-        n_group_per_sampling: Optional[int] = None,
-        to_tensor: bool = True,
-        normalize: bool = False,
-        standardize: bool = False,
-        drop_unlearnable: bool = False,
     ) -> None:
         """
         Initialize the Dataset
@@ -45,13 +43,11 @@ class Dataset(torch.utils.data.Dataset):
             batch_size (int): The batch size to be used
             buffer_size (int): The buffer size to be used
             hold_on_time (float): The time to wait before checking the buffer again (if the buffer is full)
-            groups (list[int]): The groups to be used for sampling
-            n_batch_per_sampling (int): The number of batches to be sampled per group
+            is_to_tensor (bool): Convert the data to GPU tensors or not
+            is_normalize (bool): Normalize the data or not
+            is_standardize (bool): Standardize the data or not
             n_group_per_sampling (int): The number of groups to be sampled per iteration
-            to_tensor (bool): Convert the data to GPU tensors
-            normalize (bool): Normalize the data
-            standardize (bool): Standardize the data
-            drop_unlearnable (bool): Drop the unlearnable data
+            groups (list[int]): The groups to be used for sampling
 
         Returns:
             None
@@ -65,24 +61,21 @@ class Dataset(torch.utils.data.Dataset):
         self._batch_size = batch_size
         # If groups are not provided, use all the groups
         self._groups = groups or list(range(self._parquet.num_row_groups))
-        # If n_batch_per_sampling is not provided, use 1 batch
-        self._n_batch_per_sampling = n_batch_per_sampling or 1
         # If n_group_per_sampling is not provided, use all the groups
         self._n_group_per_sampling = n_group_per_sampling or self._parquet.num_row_groups
         self._buffer_size = buffer_size
         self._hold_on_time = hold_on_time
-        self._to_tensor = to_tensor
-        self._normalize = normalize
-        self._standardize = standardize
-        self._drop_unlearnable = drop_unlearnable
+        self._is_to_tensor = is_to_tensor
+        self._is_normalize = is_normalize
+        self._is_standardize = is_standardize
 
         self._n_samples = sum([self._parquet.metadata.row_group(g).num_rows for g in self._groups])
         self._max_idx = self.__len__() - 1
 
-        self._x_min = self._x_scaling = self._y_min = self._y_scaling = np.array([])
-        self._init_norm_scaling()
-        self._norm_x_mean = self._norm_x_std = self._norm_y_mean = self._norm_y_std = np.array([])
-        self._init_standard_scaling()
+        self._x_min = self._x_norm_scaling = self._y_min = self._y_norm_scaling = np.array([])
+        self._init_normalization_scaling()
+        self._x_std_mean = self._x_std_scaling = self._y_std_mean = self._y_std_scaling = np.array([])
+        self._init_standardization_scaling()
 
         self._shutdown_event = threading.Event()
         self._lock = threading.Lock()
@@ -108,7 +101,7 @@ class Dataset(torch.utils.data.Dataset):
         if self._np_buffer.empty() and self._tensor_buffer.empty():
             local_logger.debug("Buffer queue is empty. Waiting for batches to be loaded...")
 
-        if self._to_tensor:
+        if self._is_to_tensor:
             return self._tensor_buffer.get()
 
         return self._np_buffer.get()
@@ -143,49 +136,38 @@ class Dataset(torch.utils.data.Dataset):
 
         return self._input_cols, self._target_cols
 
-    def _init_norm_scaling(self) -> None:
+    def _init_normalization_scaling(self) -> None:
         """Get the scaling values for normalization"""
 
         self._x_min = self._x_stats.loc["min"].values
-        self._x_scaling = self._x_stats.loc["max"].values - self._x_min
-        if self._drop_unlearnable:
-            unlearnable_idx = np.nonzero(self._x_scaling == 0)[0]
-            unlearnable_cols = [self._input_cols[i] for i in unlearnable_idx]
-            self._input_cols = [col for col in self._input_cols if col not in unlearnable_cols]
-            self._x_min = self._x_stats.loc["min"].values
-            self._x_scaling = self._x_stats.loc["max"].values - self._x_min
-            local_logger.warning(
-                "Dropped unlearnable columns: %s. Please check whether this is expected.", unlearnable_cols
-            )
-            local_logger.info("Updated input columns: %s.", self._input_cols)
-
-        else:
-            self._x_scaling[self._x_scaling == 0] = 1.0
-
+        self._x_norm_scaling = self._x_stats.loc["max"].values - self._x_min
         self._y_min = self._y_stats.loc["min"].values
-        self._y_scaling = self._y_stats.loc["max"].values - self._y_min
-        if any(self._y_scaling == 0):
-            unlearnable_idx = np.nonzero(self._y_scaling == 0)[0]
-            local_logger.warning(
-                "Unlearnable columns in the target: %s. Please check whether this is expected.",
-                [self._target_cols[i] for i in unlearnable_idx],
-            )
-            self._y_scaling[self._y_scaling == 0] = 1.0
+        self._y_norm_scaling = self._y_stats.loc["max"].values - self._y_min
 
-    def _init_standard_scaling(self) -> None:
+        # Replace 0 with 1 to avoid division by zero
+        # If max is min, then the normalized value is always 0
+        self._x_norm_scaling[self._x_norm_scaling == 0] = 1.0
+        self._y_norm_scaling[self._y_norm_scaling == 0] = 1.0
+
+    def _init_standardization_scaling(self) -> None:
         """Get the scaling values for standardization"""
 
-        if not self._normalize:
-            self._norm_x_mean = self._x_stats.loc["mean"].values
-            self._norm_x_std = self._x_stats.loc["std"].values
-            self._norm_y_mean = self._y_stats.loc["mean"].values
-            self._norm_y_std = self._y_stats.loc["std"].values
+        if not self._is_normalize:
+            self._x_std_mean = self._x_stats.loc["mean"].values
+            self._x_std_scaling = self._x_stats.loc["std"].values
+            self._y_std_mean = self._y_stats.loc["mean"].values
+            self._y_std_scaling = self._y_stats.loc["std"].values
 
         else:
-            self._norm_x_mean = self._x_stats.loc["norm_mean"].values
-            self._norm_x_std = self._x_stats.loc["norm_std"].values
-            self._norm_y_mean = self._y_stats.loc["norm_mean"].values
-            self._norm_y_std = self._y_stats.loc["norm_std"].values
+            self._x_std_mean = self._x_stats.loc["norm_mean"].values
+            self._x_std_scaling = self._x_stats.loc["norm_std"].values
+            self._y_std_mean = self._y_stats.loc["norm_mean"].values
+            self._y_std_scaling = self._y_stats.loc["norm_std"].values
+
+        # Replace 0 with 1 to avoid division by zero
+        # If std is 0, then the standardized value is always 0
+        self._x_std_scaling[self._x_std_scaling == 0] = 1.0
+        self._y_std_scaling[self._y_std_scaling == 0] = 1.0
 
     def _get_rows_group(self, size: int) -> np.ndarray:
         """Return a random group"""
@@ -195,13 +177,13 @@ class Dataset(torch.utils.data.Dataset):
     def _sample_from_df(self, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
         """Sample from a DataFrame"""
 
-        samples = df.sample(self._batch_size).reset_index(drop=True)
+        samples = df.sample(self._batch_size)
         x, y = samples[self._input_cols].values, samples[self._target_cols].values
 
-        if self._normalize:
+        if self._is_normalize:
             return self._normalize_batch(x, y)
 
-        if self._standardize:
+        if self._is_standardize:
             return self._standardize_batch(x, y)
 
         return x, y
@@ -209,15 +191,15 @@ class Dataset(torch.utils.data.Dataset):
     def _normalize_batch(self, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Normalize the data"""
 
-        x = (x - self._x_min) / self._x_scaling
-        y = (y - self._y_min) / self._y_scaling
+        x = (x - self._x_min) / self._x_norm_scaling
+        y = (y - self._y_min) / self._y_norm_scaling
         return x, y
 
     def _standardize_batch(self, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Standardize the data"""
 
-        x = (x - self._norm_x_mean) / self._norm_x_std
-        y = (y - self._norm_y_mean) / self._norm_y_std
+        x = (x - self._x_std_mean) / self._x_std_scaling
+        y = (y - self._y_std_mean) / self._y_std_scaling
         return x, y
 
     def _put_batch_to_tensor_buffer(self, x: np.ndarray, y: np.ndarray) -> None:
@@ -238,8 +220,9 @@ class Dataset(torch.utils.data.Dataset):
             df = self._parquet.read_row_groups(
                 row_groups=self._get_rows_group(self._n_group_per_sampling),
             ).to_pandas()
+            local_logger.debug("Loaded the row groups for sampling...")
 
-            for _ in range(self._n_batch_per_sampling):
+            for _ in range(len(df) // self._batch_size):
                 if self._shutdown_event.is_set():
                     break
 
@@ -255,7 +238,7 @@ class Dataset(torch.utils.data.Dataset):
     def _put_samples_to_buffer(self, x: np.ndarray, y: np.ndarray) -> None:
         """Put the samples to the buffer"""
 
-        if self._to_tensor:
+        if self._is_to_tensor:
             self._put_batch_to_tensor_buffer(x, y)
         else:
             self._np_buffer.put((x, y))
@@ -288,7 +271,9 @@ class Dataset(torch.utils.data.Dataset):
         )
 
     def get_batch(self, is_tensor: bool = False) -> tuple[np.ndarray, np.ndarray] | tuple[torch.Tensor, torch.Tensor]:
-        """Get a batch from the buffer"""
+        """Get a batch of data
+        NOTE: This method is used for testing purposes only.
+        """
 
         df = self._parquet.read_row_groups(
             row_groups=self._get_rows_group(self._n_group_per_sampling),
@@ -305,11 +290,11 @@ class Dataset(torch.utils.data.Dataset):
 
         x = df[self._input_cols].values
 
-        if self._normalize:
-            x = (x - self._x_min) / self._x_scaling
+        if self._is_normalize:
+            x = (x - self._x_min) / self._x_norm_scaling
 
-        if self._standardize:
-            x = (x - self._norm_x_mean) / self._norm_x_std
+        if self._is_standardize:
+            x = (x - self._x_std_mean) / self._x_std_scaling
 
         df[self._input_cols] = x
         return df
@@ -319,11 +304,47 @@ class Dataset(torch.utils.data.Dataset):
 
         y = df[self._target_cols].values
 
-        if self._normalize:
-            y = y * self._y_scaling + self._y_min
+        # NOTE:
+        # We did normalization first and then standardization
+        # So here we first unstardardize and then denormalize
+        if self._is_standardize:
+            y[:, self._y_std_scaling == 1] = 0.0
+            y = y * self._y_std_scaling + self._y_std_mean
 
-        if self._standardize:
-            y = y * self._norm_y_std + self._norm_y_mean
+        if self._is_normalize:
+            y[:, self._y_norm_scaling == 1] = 0.0
+            y = y * self._y_norm_scaling + self._y_min
 
         df[self._target_cols] = y
+        return df
+
+    def generate_tiny_dataset(self, n_samples: int = 100) -> pd.DataFrame:
+        """Generate a tiny dataset"""
+
+        n_samples_per_group = n_samples // len(self._groups)
+        df = pd.DataFrame()
+
+        for g in self._groups:
+            df = pd.concat(
+                [
+                    df,
+                    self._parquet.read_row_group(g).to_pandas().sample(n_samples_per_group),
+                ],
+                ignore_index=True,
+            )
+
+        remaning_samples = n_samples - len(df)
+        if remaning_samples > 0:
+            df = pd.concat(
+                [
+                    df,
+                    self._parquet.read_row_groups(
+                        row_groups=self._get_rows_group(1),
+                    )
+                    .to_pandas()
+                    .sample(remaning_samples),
+                ],
+                ignore_index=True,
+            )
+
         return df

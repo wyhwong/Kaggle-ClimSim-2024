@@ -20,7 +20,7 @@ def output_compressed_parquet(
     input_cols: list[str],
     weights: pd.DataFrame,
     output_dir: str = ".",
-) -> None:
+) -> pd.DataFrame:
     """
     Output the submission file in the format of a gzipped parquet file.
     TODO: Replace pandas with polars for better performance.
@@ -34,7 +34,7 @@ def output_compressed_parquet(
         output_dir (str): The output directory
 
     Returns:
-        None
+        pd.DataFrame: The output data
     """
 
     df_input = dataset.preprocess_features(df_input)
@@ -54,8 +54,8 @@ def output_compressed_parquet(
         np.concatenate(outputs_set, axis=0),
         columns=src.schemas.climsim.OUTPUT_COLUMNS,
     )
-    df_output = dataset.postprocess_targets(df_output)
-    df_output["sample_id"] = df_input["sample_id"]
+    df_output = dataset.postprocess_targets(df=df_output)
+    df_output = pd.concat([df_input[["sample_id"]], df_output], axis=1)
 
     for col in src.schemas.climsim.OUTPUT_COLUMNS:
         df_output[col] *= weights[col]
@@ -65,3 +65,5 @@ def output_compressed_parquet(
         index=False,
         engine="pyarrow",
     )
+
+    return df_output

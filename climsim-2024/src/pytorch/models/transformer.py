@@ -15,6 +15,7 @@ class Transformer(ModelBase):
 
     def __init__(
         self,
+        steps_per_epoch: int,
         input_dim: int = 556,
         output_dim: int = 368,
         hidden_dim: int = 512,
@@ -25,7 +26,7 @@ class Transformer(ModelBase):
     ) -> None:
         """Initialize the model."""
 
-        super().__init__(loss_fn=loss_fn or nn.CrossEntropyLoss())
+        super().__init__(steps_per_epoch=steps_per_epoch, loss_fn=loss_fn or nn.CrossEntropyLoss())
 
         self._input_dim = input_dim
         self._output_dim = output_dim

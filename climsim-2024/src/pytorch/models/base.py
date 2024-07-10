@@ -1,3 +1,4 @@
+import math
 from abc import ABC, abstractmethod
 from typing import Callable, Optional
 
@@ -5,23 +6,70 @@ import lightning
 import torch
 from torch import nn
 
+import src.env
 import src.logger
 import src.pytorch.loss.r2
+import src.schemas.constants
 
 
 local_logger = src.logger.get_logger(__name__)
 
 
+def cosine_decay_lr_scheduling(
+    step: int,
+    initial_lr: float,
+    decay_steps: int,
+    warmup_steps: int,
+    alpha: float,
+    maximum_lr: Optional[float] = None,
+) -> float:
+    """Learning rate schedule.
+    This implementation is based on CosineDecay LR Schedule from TensorFlow.
+    https://www.tensorflow.org/api_docs/python/tf/keras/optimizers/schedules/CosineDecay
+
+    Args:
+        step (int): The current step
+        initial_lr (float): The initial learning rate
+        decay_steps (int): The number of steps for decay
+        warmup_steps (int): The number of steps for warmup
+        alpha (float): The alpha parameter
+        maximum_lr (float): The maximum learning rate
+
+    Returns:
+        float: The learning rate
+    """
+
+    if maximum_lr is None:
+        maximum_lr = initial_lr
+
+    if step < warmup_steps:
+        # Linear warmup phase
+        completed_fraction = step / warmup_steps
+        total_delta = maximum_lr - initial_lr
+        return initial_lr + completed_fraction * total_delta
+    else:
+        # Cosine decay phase
+        step_in_decay_phase = step - warmup_steps
+        step_in_decay_phase = min(step_in_decay_phase, decay_steps)
+        cosine_decay = 0.5 * (1 + math.cos(math.pi * step_in_decay_phase / decay_steps))
+        decayed = (1 - alpha) * cosine_decay + alpha
+        return maximum_lr * decayed
+
+
 class ModelBase(lightning.LightningModule, ABC):
     """Multilayer perceptron model for regression."""
 
-    def __init__(self, loss_fn: Optional[Callable] = None) -> None:
+    def __init__(
+        self,
+        steps_per_epoch: int,
+        loss_fn: Optional[Callable] = None,
+    ) -> None:
         """
         Initialize the model.
 
         Args:
-            loss_train: Loss function for training
-            loss_val: Loss function for validation
+            steps_per_epoch (int): Number of steps per epoch
+            loss_fn (Optional[Callable], optional): Loss function. Defaults to None.
 
         Returns:
             None
@@ -29,50 +77,82 @@ class ModelBase(lightning.LightningModule, ABC):
 
         super().__init__()
 
+        self._steps_per_epoch = steps_per_epoch
         self._loss_fn = loss_fn or nn.functional.mse_loss
 
-        self._batch_loss_train: list[float] = []
-        self._batch_loss_val: list[float] = []
-        self._batch_r2_loss: list[float] = []
+        self._batch_loss: dict[str, list[float]] = {stage: [] for stage in src.schemas.constants.Stage}
+        self._batch_r2: dict[str, list[float]] = {stage: [] for stage in src.schemas.constants.Stage}
 
-        self._epoch_loss_train: dict[int, float] = {}
-        self._epoch_loss_val: dict[int, float] = {}
-
-        self._best_loss_train: float = float("inf")
-        self._best_loss_val: float = float("inf")
+        self._best_loss = {stage: float("inf") for stage in src.schemas.constants.Stage}
+        self._best_r2 = {stage: -float("inf") for stage in src.schemas.constants.Stage}
 
     def __post_init__(self) -> None:
         """Post initialization."""
 
-        self._optimizers: list[torch.optim.Optimizer] = [torch.optim.Adam(self.parameters(), lr=1e-3)]
+        warmup_steps = self._steps_per_epoch * src.env.N_WARMUP_EPOCHS
+        decay_steps = self._steps_per_epoch * src.env.N_DECAY_EPOCHS
+
+        self._optimizers: list[torch.optim.Optimizer] = [
+            torch.optim.Adam(self.parameters(), lr=1.0, eps=1e-7),
+        ]
         self._schedulers: list[torch.optim.lr_scheduler.LRScheduler] = [
-            # torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.99) for optimizer in self._optimizers
-            # torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=1e-2, total_steps=600)
-            torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=12, eta_min=1e-7)
+            torch.optim.lr_scheduler.LambdaLR(
+                optimizer,
+                lr_lambda=lambda step: cosine_decay_lr_scheduling(
+                    step=step,
+                    initial_lr=src.env.INITIAL_LR,
+                    maximum_lr=src.env.MAXIMUM_LR,
+                    warmup_steps=warmup_steps,
+                    decay_steps=decay_steps,
+                    alpha=src.env.ALPHA,
+                ),
+            )
             for optimizer in self._optimizers
         ]
+
+        local_logger.info("Initialized optimizer: %s.", self._optimizers[0].__class__.__name__)
+        local_logger.info("Initialized scheduler: %s.", self._schedulers[0].__class__.__name__)
+        local_logger.info("Initial Learning Rate: %.4f.", src.env.INITIAL_LR)
+        local_logger.info("Maximum Learning Rate: %.4f.", src.env.MAXIMUM_LR)
+        local_logger.info("Warmup Steps: %d.", warmup_steps)
+        local_logger.info("Decay Steps: %d.", decay_steps)
+        local_logger.info("Alpha: %.4f.", src.env.ALPHA)
 
     def replace_optimizers(
         self,
         optimizers: list[torch.optim.Optimizer],
         schedulers: list[torch.optim.lr_scheduler.LRScheduler],
     ) -> None:
-        """Set the optimizers."""
+        """Replace the optimizers and schedulers."""
 
         self._optimizers = optimizers
         self._schedulers = schedulers
 
-    @abstractmethod
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass of the model.
+    def _common_step(
+        self,
+        batch: torch.Tensor,
+        batch_idx: int,  # pylint: disable=unused-argument
+        stage: src.schemas.constants.Stage,
+    ) -> torch.Tensor:
+        """Common step for training and validation."""
 
-        Args:
-            x (torch.Tensor): Input tensor
+        x, y = batch
+        # Unpack the batch if it contains only one element
+        if len(x) == 1:
+            x, y = x[0], y[0]
 
-        Returns:
-            torch.Tensor: Output tensor
-        """
+        y_hat = self.forward(x)
+
+        batch_loss = self._loss_fn(y_hat, y)
+        batch_r2 = src.pytorch.loss.r2.r2_score_multivariate(y_hat, y)
+
+        self.log(f"{stage}_loss", batch_loss)
+        self.log(f"{stage}_r2", batch_r2)
+
+        self._batch_loss[stage].append(batch_loss.item())
+        self._batch_r2[stage].append(batch_r2.item())
+
+        return batch_loss
 
     def training_step(
         self,
@@ -81,75 +161,73 @@ class ModelBase(lightning.LightningModule, ABC):
     ) -> torch.Tensor:
         """Training step."""
 
-        # FIXME: Originally it should be x, y = batch
-        # However, we are using a DataLoader with BatchSampler
-        _x, _y = batch
-        x, y = _x[0], _y[0]
-        y_hat = self.forward(x)
-        batch_loss = self._loss_fn(y_hat, y)
-
-        self._batch_loss_train.append(batch_loss.detach().cpu().numpy())
-        self.log("train_loss", batch_loss)
+        batch_loss = self._common_step(batch, batch_idx, src.schemas.constants.Stage.TRAIN)
         return batch_loss
-
-    def on_train_epoch_end(self) -> None:
-        """Called at the end of the training epoch."""
-
-        epoch_loss = sum(self._batch_loss_train) / len(self._batch_loss_train)
-        self._epoch_loss_train[self.current_epoch] = epoch_loss
-        self._batch_loss_train.clear()
-
-        if epoch_loss < self._best_loss_train:
-            self._best_loss_train = epoch_loss
-            local_logger.info("Epoch %d - Best Training Loss: %.4f", self.current_epoch, epoch_loss)
-        else:
-            local_logger.info("Epoch %d - Training Loss: %.4f", self.current_epoch, epoch_loss)
-
-        self.log("train_epoch_loss", epoch_loss, on_step=False, on_epoch=True)
 
     def validation_step(
         self,
         batch: torch.Tensor,
         batch_idx: int,  # pylint: disable=unused-argument
-    ) -> torch.Tensor:
+    ) -> None:
         """Validation step."""
 
-        # FIXME: Originally it should be X, y = batch
-        # However, we are using a DataLoader with BatchSampler
-        _x, _y = batch
-        x, y = _x[0], _y[0]
-        y_hat = self.forward(x)
-        batch_loss = self._loss_fn(y_hat, y)
+        self._common_step(batch, batch_idx, src.schemas.constants.Stage.VALID)
 
-        self._batch_loss_val.append(batch_loss.detach().cpu().numpy())
-        self.log("val_loss", batch_loss)
+    def test_step(
+        self,
+        batch: torch.Tensor,
+        batch_idx: int,  # pylint: disable=unused-argument
+    ) -> None:
+        """Test step."""
 
-        r2_loss = src.pytorch.loss.r2.r2_residual_multivariate(y_hat, y)
-        self._batch_r2_loss.append(r2_loss.detach().cpu().numpy())
-        self.log("r2_loss", r2_loss)
+        self._common_step(batch, batch_idx, src.schemas.constants.Stage.TEST)
 
-        return batch_loss
+    def _common_epoch_end(self, stage: src.schemas.constants.Stage) -> None:
+        """Common epoch end for training and validation."""
+
+        epoch_loss = sum(self._batch_loss[stage]) / len(self._batch_loss[stage])
+        epoch_r2 = sum(self._batch_r2[stage]) / len(self._batch_r2[stage])
+
+        self._batch_loss[stage].clear()
+        self._batch_r2[stage].clear()
+
+        self._best_loss[stage] = min(epoch_loss, self._best_loss[stage])
+        self._best_r2[stage] = max(epoch_r2, self._best_r2[stage])
+
+        local_logger.info(
+            "Epoch %d - %s Best Loss: %.4f, Best R2: %.4f", self.current_epoch, stage, epoch_loss, epoch_r2
+        )
+
+        self.log(f"{stage}_epoch_loss", epoch_loss, on_step=False, on_epoch=True)
+        self.log(f"{stage}_epoch_r2", epoch_r2, on_step=False, on_epoch=True)
+
+    def on_train_epoch_end(self) -> None:
+        """Called at the end of the training epoch."""
+
+        self._common_epoch_end(src.schemas.constants.Stage.TRAIN)
 
     def on_validation_epoch_end(self) -> None:
         """Called at the end of the validation epoch."""
 
-        epoch_loss = sum(self._batch_loss_val) / len(self._batch_loss_val)
-        self._epoch_loss_val[self.current_epoch] = epoch_loss
-        self._batch_loss_val.clear()
+        self._common_epoch_end(src.schemas.constants.Stage.VALID)
 
-        epoch_r2_loss = sum(self._batch_r2_loss) / len(self._batch_r2_loss)
-        self._batch_r2_loss.clear()
+    def configure_optimizers(self):
+        """Configure the optimizers and schedulers."""
 
-        if epoch_loss < self._best_loss_val:
-            self._best_loss_val = epoch_loss
-            local_logger.info("Epoch %d - Best Validation Loss: %.4f", self.current_epoch, epoch_loss)
-        else:
-            local_logger.info("Epoch %d - Validation Loss: %.4f", self.current_epoch, epoch_loss)
+        return tuple(
+            [
+                {
+                    "optimizer": optimizer,
+                    "lr_scheduler": {
+                        "scheduler": scheduler,
+                        "interval": "step",  # Step every batch
+                        "frequency": 1,
+                    },
+                }
+                for optimizer, scheduler in zip(self._optimizers, self._schedulers)
+            ]
+        )
 
-        self.log("val_epoch_loss", epoch_loss, on_step=False, on_epoch=True)
-        self.log("epoch_r2_loss", epoch_r2_loss, on_step=False, on_epoch=True)
-
-    def configure_optimizers(self) -> tuple[list[torch.optim.Optimizer], list[torch.optim.lr_scheduler.LRScheduler]]:
-        """Return the optimizer."""
-
-        return self._optimizers, self._schedulers
+    @abstractmethod
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass of the model."""

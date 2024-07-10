@@ -14,8 +14,8 @@ local_logger = src.logger.get_logger(__name__)
 def get_default_trainer(
     deterministic: bool,
     model_name: str,
-    max_epochs: int = 100,
-    max_time: datetime.timedelta = datetime.timedelta(hours=1),
+    max_epochs: int = src.env.N_EPOCHS,
+    max_time: datetime.timedelta = datetime.timedelta(hours=src.env.MAXIMUM_TRAINING_TIME_IN_HOUR),
     log_every_n_steps=10,
     check_val_every_n_epoch: int = 3,
     callbacks: Optional[list[lightning.pytorch.callbacks.Callback]] = None,
@@ -40,6 +40,10 @@ def get_default_trainer(
     """
 
     lightning.pytorch.seed_everything(src.env.RANDOM_SEED, workers=True)
+
+    base_dirpath = "./models"
+    version = datetime.datetime.now(tz=datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
     if callbacks is None:
         callbacks = [
             LearningRateMonitor(
@@ -49,18 +53,25 @@ def get_default_trainer(
             ),
             EarlyStopping(
                 monitor="val_loss",
-                patience=20,
+                patience=5,
                 verbose=True,
                 mode="min",
             ),
             ModelCheckpoint(
                 monitor="val_loss",
-                dirpath="./models",
-                filename=model_name + "-epoch{epoch:02d}",
+                dirpath=f"{base_dirpath}/{model_name}/{version}",
+                filename=model_name + "-best-{epoch:02d}",
                 save_top_k=1,
                 save_last=True,
                 verbose=True,
                 mode="min",
+            ),
+            ModelCheckpoint(
+                dirpath=f"{base_dirpath}/{model_name}/{version}",
+                filename=model_name + "-{epoch:02d}",
+                every_n_epochs=5,
+                save_top_k=-1,
+                verbose=True,
             ),
         ]
 
@@ -70,7 +81,7 @@ def get_default_trainer(
         deterministic=deterministic,
         check_val_every_n_epoch=check_val_every_n_epoch,
         log_every_n_steps=log_every_n_steps,
-        default_root_dir=f"./training_logs/{model_name}",
+        default_root_dir=f"./logs/{model_name}/{version}",
         callbacks=callbacks,
         use_distributed_sampler=use_distributed_sampler,
         **kwargs,
