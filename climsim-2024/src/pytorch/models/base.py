@@ -1,6 +1,5 @@
-import math
 from abc import ABC, abstractmethod
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import lightning
 import torch
@@ -15,70 +14,29 @@ import src.schemas.constants
 local_logger = src.logger.get_logger(__name__)
 
 
-def cosine_decay_lr_scheduling(
-    step: int,
-    initial_lr: float,
-    decay_steps: int,
-    warmup_steps: int,
-    alpha: float,
-    maximum_lr: Optional[float] = None,
-) -> float:
-    """Learning rate schedule.
-    This implementation is based on CosineDecay LR Schedule from TensorFlow.
-    https://www.tensorflow.org/api_docs/python/tf/keras/optimizers/schedules/CosineDecay
-
-    Args:
-        step (int): The current step
-        initial_lr (float): The initial learning rate
-        decay_steps (int): The number of steps for decay
-        warmup_steps (int): The number of steps for warmup
-        alpha (float): The alpha parameter
-        maximum_lr (float): The maximum learning rate
-
-    Returns:
-        float: The learning rate
-    """
-
-    if maximum_lr is None:
-        maximum_lr = initial_lr
-
-    if step < warmup_steps:
-        # Linear warmup phase
-        completed_fraction = step / warmup_steps
-        total_delta = maximum_lr - initial_lr
-        return initial_lr + completed_fraction * total_delta
-    else:
-        # Cosine decay phase
-        step_in_decay_phase = step - warmup_steps
-        step_in_decay_phase = min(step_in_decay_phase, decay_steps)
-        cosine_decay = 0.5 * (1 + math.cos(math.pi * step_in_decay_phase / decay_steps))
-        decayed = (1 - alpha) * cosine_decay + alpha
-        return maximum_lr * decayed
-
-
 class ModelBase(lightning.LightningModule, ABC):
-    """Multilayer perceptron model for regression."""
+    """Regression Model Base Class."""
 
     def __init__(
         self,
-        steps_per_epoch: int,
+        scheduler_config: Optional[dict[str, Any]] = None,
         loss_fn: Optional[Callable] = None,
     ) -> None:
-        """
-        Initialize the model.
+        """Initialize the model.
 
         Args:
             steps_per_epoch (int): Number of steps per epoch
             loss_fn (Optional[Callable], optional): Loss function. Defaults to None.
-
-        Returns:
-            None
         """
 
         super().__init__()
 
-        self._steps_per_epoch = steps_per_epoch
         self._loss_fn = loss_fn or nn.functional.mse_loss
+
+        self._scheduler_config = scheduler_config or {
+            "interval": "step",  # Step every batch
+            "frequency": 1,
+        }
 
         self._batch_loss: dict[str, list[float]] = {stage: [] for stage in src.schemas.constants.Stage}
         self._batch_r2: dict[str, list[float]] = {stage: [] for stage in src.schemas.constants.Stage}
@@ -89,34 +47,16 @@ class ModelBase(lightning.LightningModule, ABC):
     def __post_init__(self) -> None:
         """Post initialization."""
 
-        warmup_steps = self._steps_per_epoch * src.env.N_WARMUP_EPOCHS
-        decay_steps = self._steps_per_epoch * src.env.N_DECAY_EPOCHS
-
         self._optimizers: list[torch.optim.Optimizer] = [
-            torch.optim.Adam(self.parameters(), lr=1.0, eps=1e-7),
+            torch.optim.Adam(self.parameters(), lr=1e-3),
         ]
         self._schedulers: list[torch.optim.lr_scheduler.LRScheduler] = [
-            torch.optim.lr_scheduler.LambdaLR(
-                optimizer,
-                lr_lambda=lambda step: cosine_decay_lr_scheduling(
-                    step=step,
-                    initial_lr=src.env.INITIAL_LR,
-                    maximum_lr=src.env.MAXIMUM_LR,
-                    warmup_steps=warmup_steps,
-                    decay_steps=decay_steps,
-                    alpha=src.env.ALPHA,
-                ),
-            )
+            torch.optim.lr_scheduler.PolynomialLR(optimizer, power=1.0, total_iters=1000)
             for optimizer in self._optimizers
         ]
 
         local_logger.info("Initialized optimizer: %s.", self._optimizers[0].__class__.__name__)
         local_logger.info("Initialized scheduler: %s.", self._schedulers[0].__class__.__name__)
-        local_logger.info("Initial Learning Rate: %.4f.", src.env.INITIAL_LR)
-        local_logger.info("Maximum Learning Rate: %.4f.", src.env.MAXIMUM_LR)
-        local_logger.info("Warmup Steps: %d.", warmup_steps)
-        local_logger.info("Decay Steps: %d.", decay_steps)
-        local_logger.info("Alpha: %.4f.", src.env.ALPHA)
 
     def replace_optimizers(
         self,
@@ -137,7 +77,9 @@ class ModelBase(lightning.LightningModule, ABC):
         """Common step for training and validation."""
 
         x, y = batch
+
         # Unpack the batch if it contains only one element
+        # NOTE: This is a workaround for the Dataloader with BatchSampler
         if len(x) == 1:
             x, y = x[0], y[0]
 
@@ -154,30 +96,18 @@ class ModelBase(lightning.LightningModule, ABC):
 
         return batch_loss
 
-    def training_step(
-        self,
-        batch: torch.Tensor,
-        batch_idx: int,  # pylint: disable=unused-argument
-    ) -> torch.Tensor:
+    def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
         """Training step."""
 
         batch_loss = self._common_step(batch, batch_idx, src.schemas.constants.Stage.TRAIN)
         return batch_loss
 
-    def validation_step(
-        self,
-        batch: torch.Tensor,
-        batch_idx: int,  # pylint: disable=unused-argument
-    ) -> None:
+    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
         """Validation step."""
 
         self._common_step(batch, batch_idx, src.schemas.constants.Stage.VALID)
 
-    def test_step(
-        self,
-        batch: torch.Tensor,
-        batch_idx: int,  # pylint: disable=unused-argument
-    ) -> None:
+    def test_step(self, batch: torch.Tensor, batch_idx: int) -> None:
         """Test step."""
 
         self._common_step(batch, batch_idx, src.schemas.constants.Stage.TEST)
@@ -220,8 +150,8 @@ class ModelBase(lightning.LightningModule, ABC):
                     "optimizer": optimizer,
                     "lr_scheduler": {
                         "scheduler": scheduler,
-                        "interval": "step",  # Step every batch
-                        "frequency": 1,
+                        "interval": self._scheduler_config["interval"],
+                        "frequency": self._scheduler_config["frequency"],
                     },
                 }
                 for optimizer, scheduler in zip(self._optimizers, self._schedulers)
