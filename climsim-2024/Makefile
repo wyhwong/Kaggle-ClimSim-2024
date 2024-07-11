@@ -1,3 +1,6 @@
+FILEPATH ?= "./notebooks/submission.parquet"
+MESSAGE ?= "Submission Kaggle Kaggle CLI"
+
 # Install Python dependencies in poetry environment
 install:
 	poetry install
@@ -24,3 +27,7 @@ static-code-analysis:
 # Run tests
 test:
 	poetry run pytest --disable-warnings
+
+# Submit a prediction to Kaggle
+submit:
+	poetry run kaggle competitions submit -c leap-atmospheric-physics-ai-climsim -f ${FILEPATH} -m ${MESSAGE}

@@ -54,10 +54,10 @@ class Dataset(torch.utils.data.Dataset):
         """
 
         self._parquet = pq.ParquetFile(source, memory_map=True, buffer_size=10)
-        self._x_stats = pd.read_parquet(x_stats)
-        self._y_stats = pd.read_parquet(y_stats)
-        self._input_cols = self._x_stats.columns.tolist()
-        self._target_cols = self._y_stats.columns.tolist()
+        self.x_stats = pd.read_parquet(x_stats)
+        self.y_stats = pd.read_parquet(y_stats)
+        self.input_cols = self.x_stats.columns.tolist()
+        self.output_cols = self.y_stats.columns.tolist()
         self._batch_size = batch_size
         # If groups are not provided, use all the groups
         self._groups = groups or list(range(self._parquet.num_row_groups))
@@ -134,15 +134,15 @@ class Dataset(torch.utils.data.Dataset):
     def get_cols(self) -> tuple[list[str], list[str]]:
         """Get the input and target columns"""
 
-        return self._input_cols, self._target_cols
+        return self.input_cols, self.output_cols
 
     def _init_normalization_scaling(self) -> None:
         """Get the scaling values for normalization"""
 
-        self._x_min = self._x_stats.loc["min"].values
-        self._x_norm_scaling = self._x_stats.loc["max"].values - self._x_min
-        self._y_min = self._y_stats.loc["min"].values
-        self._y_norm_scaling = self._y_stats.loc["max"].values - self._y_min
+        self._x_min = self.x_stats.loc["min"].values
+        self._x_norm_scaling = self.x_stats.loc["max"].values - self._x_min
+        self._y_min = self.y_stats.loc["min"].values
+        self._y_norm_scaling = self.y_stats.loc["max"].values - self._y_min
 
         # Replace 0 with 1 to avoid division by zero
         # If max is min, then the normalized value is always 0
@@ -153,16 +153,16 @@ class Dataset(torch.utils.data.Dataset):
         """Get the scaling values for standardization"""
 
         if not self._is_normalize:
-            self._x_std_mean = self._x_stats.loc["mean"].values
-            self._x_std_scaling = self._x_stats.loc["std"].values
-            self._y_std_mean = self._y_stats.loc["mean"].values
-            self._y_std_scaling = self._y_stats.loc["std"].values
+            self._x_std_mean = self.x_stats.loc["mean"].values
+            self._x_std_scaling = self.x_stats.loc["std"].values
+            self._y_std_mean = self.y_stats.loc["mean"].values
+            self._y_std_scaling = self.y_stats.loc["std"].values
 
         else:
-            self._x_std_mean = self._x_stats.loc["norm_mean"].values
-            self._x_std_scaling = self._x_stats.loc["norm_std"].values
-            self._y_std_mean = self._y_stats.loc["norm_mean"].values
-            self._y_std_scaling = self._y_stats.loc["norm_std"].values
+            self._x_std_mean = self.x_stats.loc["norm_mean"].values
+            self._x_std_scaling = self.x_stats.loc["norm_std"].values
+            self._y_std_mean = self.y_stats.loc["norm_mean"].values
+            self._y_std_scaling = self.y_stats.loc["norm_std"].values
 
         # Replace 0 with 1 to avoid division by zero
         # If std is 0, then the standardized value is always 0
@@ -174,11 +174,17 @@ class Dataset(torch.utils.data.Dataset):
 
         return np.random.choice(self._groups, size=size, replace=False)
 
-    def _sample_from_df(self, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    def _sample_from_df(
+        self,
+        df: pd.DataFrame,
+        batch_size: Optional[int] = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Sample from a DataFrame"""
 
-        samples = df.sample(self._batch_size)
-        x, y = samples[self._input_cols].values, samples[self._target_cols].values
+        batch_size = batch_size or self._batch_size
+
+        samples = df.sample(batch_size)
+        x, y = samples[self.input_cols].values, samples[self.output_cols].values
 
         if self._is_normalize:
             return self._normalize_batch(x, y)
@@ -270,7 +276,9 @@ class Dataset(torch.utils.data.Dataset):
             **kwargs,
         )
 
-    def get_batch(self, is_tensor: bool = False) -> tuple[np.ndarray, np.ndarray] | tuple[torch.Tensor, torch.Tensor]:
+    def get_batch(
+        self, size: Optional[int] = None, is_tensor: bool = False
+    ) -> tuple[np.ndarray, np.ndarray] | tuple[torch.Tensor, torch.Tensor]:
         """Get a batch of data
         NOTE: This method is used for testing purposes only.
         """
@@ -279,7 +287,7 @@ class Dataset(torch.utils.data.Dataset):
             row_groups=self._get_rows_group(self._n_group_per_sampling),
         ).to_pandas()
 
-        x, y = self._sample_from_df(df=df)
+        x, y = self._sample_from_df(df=df, batch_size=size)
 
         if is_tensor:
             return torch.Tensor(x).to(src.env.DEVICE), torch.Tensor(y).to(src.env.DEVICE)
@@ -288,7 +296,7 @@ class Dataset(torch.utils.data.Dataset):
     def preprocess_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Normalize the data"""
 
-        x = df[self._input_cols].values
+        x = df[self.input_cols].values
 
         if self._is_normalize:
             x = (x - self._x_min) / self._x_norm_scaling
@@ -296,13 +304,13 @@ class Dataset(torch.utils.data.Dataset):
         if self._is_standardize:
             x = (x - self._x_std_mean) / self._x_std_scaling
 
-        df[self._input_cols] = x
+        df[self.input_cols] = x
         return df
 
     def postprocess_targets(self, df: pd.DataFrame) -> pd.DataFrame:
         """Denormalize the data"""
 
-        y = df[self._target_cols].values
+        y = df[self.output_cols].values
 
         # NOTE:
         # We did normalization first and then standardization
@@ -315,7 +323,7 @@ class Dataset(torch.utils.data.Dataset):
             y[:, self._y_norm_scaling == 1] = 0.0
             y = y * self._y_norm_scaling + self._y_min
 
-        df[self._target_cols] = y
+        df[self.output_cols] = y
         return df
 
     def generate_tiny_dataset(self, n_samples: int = 100) -> pd.DataFrame:
