@@ -4,9 +4,8 @@ import torch
 from torch import nn
 from tqdm import tqdm
 
-import src.env
 import src.logger
-import src.pytorch.data.parquet
+import src.pytorch.dataset.base
 import src.schemas.climsim
 
 
@@ -32,7 +31,7 @@ def get_underperforming_mask(y_hat: torch.Tensor, y: torch.Tensor) -> np.ndarray
 
 def output_submission_parquet(
     model: nn.Module,
-    dataset: src.pytorch.data.parquet.Dataset,
+    dataset: src.pytorch.dataset.base.DatasetBase,
     df: pd.DataFrame,
     weights: pd.DataFrame,
     calibration_batch_size: int = 16348,
@@ -44,7 +43,7 @@ def output_submission_parquet(
 
     Args:
         model (nn.Module): The model to be used for inference
-        dataset (src.pytorch.data.parquet.Dataset): The dataset object (used for training)
+        dataset (src.pytorch.dataset.base.DatasetBase): The dataset object (used for training)
         df (pd.DataFrame): The input data
         weights (pd.DataFrame): The weights for each output column
         calibration_batch_size (int): The batch size for calibration
@@ -54,21 +53,20 @@ def output_submission_parquet(
         pd.DataFrame: The output data
     """
 
-    df_input = dataset.preprocess_features(df.copy())
-    inputs_set = df_input.loc[:, dataset.input_cols].values
+    inputs_set = dataset.preprocess_features(df.loc[:, dataset.input_cols].values)
     outputs_set = []
 
     model.eval()
 
     # Do calibration
     # Find which outputs are underperforming
-    x, y = dataset.get_batch(size=calibration_batch_size, is_tensor=True)
+    x, y = dataset.get_batch(size=calibration_batch_size)
     y_hat = model(x)
     mask = get_underperforming_mask(y_hat, y)
 
     # Use tqdm for progress bar
     for i in tqdm(range(len(inputs_set)), desc="Processing Samples"):
-        inputs = torch.Tensor(inputs_set[i : i + 1]).float().to(src.env.DEVICE)
+        inputs = inputs_set[i : i + 1]
         with torch.no_grad():
             output = model(inputs)
         outputs_set.append(output.cpu().numpy())
@@ -77,14 +75,12 @@ def output_submission_parquet(
         np.concatenate(outputs_set, axis=0),
         columns=dataset.output_cols,
     )
-    df_output = dataset.postprocess_targets(df=df_output)
 
     # Replace underperforming targets with the mean
-    outputs = df_output.values
+    outputs = dataset.postprocess_targets(df_output[dataset.output_cols].values)
     outputs[:, mask == 1] = dataset.y_stats.loc["mean"].values[mask == 1]
     df_output[dataset.output_cols] = outputs
-
-    df_output = pd.concat([df_input[["sample_id"]], df_output], axis=1)
+    df_output = pd.concat([df[["sample_id"]], df_output], axis=1)
 
     # Apply weights
     for col in dataset.output_cols:

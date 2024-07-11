@@ -29,8 +29,8 @@ class FileDataset(base.DatasetBase):
 
         data = self.read_source()
 
-        self.x = self._preprocess_features(data[self.input_cols].values)
-        self.y = self._preprocess_targets(data[self.output_cols].values)
+        self.x = self.preprocess_features(data[self.input_cols].values)
+        self.y = self.preprocess_targets(data[self.output_cols].values)
 
     def read_source(self) -> pd.DataFrame:
         """Read the source file"""
@@ -38,7 +38,7 @@ class FileDataset(base.DatasetBase):
         if ".parquet" in self._source:
             return pd.read_parquet(self._source)
         elif ".csv" in self._source:
-            return pd.read_csv(self.source)
+            return pd.read_csv(self._source)
         elif ".arrow" in self._source or ".feather" in self._source:
             return pd.read_feather(self._source)
         raise ValueError("Unknown file format")
@@ -61,12 +61,7 @@ class FileDataset(base.DatasetBase):
         idx = np.random.randint(0, len(self), size)
         return self.x[idx], self.y[idx]
 
-    def to_dataloader(self, batch_size: int, shuffle=True, **kwargs) -> torch.utils.data.DataLoader:
+    def to_dataloader(self, **kwargs) -> torch.utils.data.DataLoader:
         """Return a torch DataLoader object"""
 
-        return torch.utils.data.DataLoader(
-            self,
-            batch_size=batch_size,
-            shuffle=shuffle,
-            **kwargs,
-        )
+        return torch.utils.data.DataLoader(self, **kwargs)

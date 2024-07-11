@@ -1,4 +1,11 @@
-from typing import Callable, Optional
+"""
+    This implementation is based on Approximation of Kolmogorov-Arnold Network
+    Original implementation: https://github.com/ZiyaoLi/fast-kan
+
+    Here we change it to be capable of training with torch lightning
+"""
+
+from typing import Any, Callable, Optional
 
 import lightning
 import torch
@@ -133,17 +140,12 @@ class FastKANLayer(lightning.LightningModule):
 
 
 class FastKAN(ModelBase):
-    """
-    This implementation is based on Approximation of Kolmogorov-Arnold Network
-    Original implementation: https://github.com/ZiyaoLi/fast-kan
-
-    Here we change it to be capable of training with torch lightning
-    """
+    """Fast Kolmogorov-Arnold Network Model"""
 
     def __init__(
         self,
         layers_hidden: list[int],
-        steps_per_epoch: int,
+        scheduler_config: Optional[dict[str, Any]] = None,
         loss_fn: Optional[Callable] = None,
         grid_min: float = -2.0,
         grid_max: float = 2.0,
@@ -152,10 +154,11 @@ class FastKAN(ModelBase):
         base_activation=nn.functional.silu,
         spline_weight_init_scale: float = 0.1,
     ) -> None:
-        """
+        """Initialize the model.
+
         Args:
             layers_hidden: list of hidden layer sizes
-            steps_per_epoch: number of steps per epoch
+            scheduler_config: scheduler configuration
             loss_fn: loss function
             grid_min: minimum value of the grid
             grid_max: maximum value of the grid
@@ -168,7 +171,7 @@ class FastKAN(ModelBase):
             None
         """
 
-        super().__init__(steps_per_epoch=steps_per_epoch, loss_fn=loss_fn)
+        super().__init__(scheduler_config=scheduler_config, loss_fn=loss_fn)
 
         self._layers = nn.ModuleList(
             [

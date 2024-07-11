@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import torch
 from torch import nn
@@ -15,23 +15,13 @@ class MLP(ModelBase):
 
     def __init__(
         self,
-        steps_per_epoch: int,
         layers_hidden: list[int],
+        scheduler_config: Optional[dict[str, Any]] = None,
         loss_fn: Optional[Callable] = None,
     ) -> None:
-        """
-        Initialize a multilayer perceptron model for regression.
+        """MLP Constructor."""
 
-        Args:
-            steps_per_epoch (int): Number of steps per epoch
-            layers_hidden (list[int]): Number of hidden units in each layer
-            loss_fn (Optional[Callable]): Loss function for training
-
-        Returns:
-            None
-        """
-
-        super().__init__(steps_per_epoch=steps_per_epoch, loss_fn=loss_fn)
+        super().__init__(scheduler_config=scheduler_config, loss_fn=loss_fn)
 
         layers: list[nn.Module] = []
         for i in range(len(layers_hidden) - 2):

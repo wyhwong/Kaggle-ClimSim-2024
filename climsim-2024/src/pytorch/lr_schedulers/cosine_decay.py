@@ -46,13 +46,10 @@ class CosineDecayLR(torch.optim.lr_scheduler.LambdaLR):
             float: The learning rate
         """
 
-        if self._maximum_lr is None:
-            maximum_lr = self._initial_lr
-
         if step < self._warmup_steps:
             # Linear warmup phase
             completed_fraction = step / self._warmup_steps
-            total_delta = maximum_lr - self._initial_lr
+            total_delta = self._maximum_lr - self._initial_lr
             return self._initial_lr + completed_fraction * total_delta
         else:
             # Cosine decay phase
@@ -60,4 +57,4 @@ class CosineDecayLR(torch.optim.lr_scheduler.LambdaLR):
             step_in_decay_phase = min(step_in_decay_phase, self._decay_steps)
             cosine_decay = 0.5 * (1 + math.cos(math.pi * step_in_decay_phase / self._decay_steps))
             decayed = (1 - self._alpha) * cosine_decay + self._alpha
-            return maximum_lr * decayed
+            return self._maximum_lr * decayed

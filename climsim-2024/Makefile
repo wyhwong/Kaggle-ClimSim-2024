@@ -16,6 +16,8 @@ format:
 	poetry run isort src
 	poetry run black tests
 	poetry run isort tests
+	poetry run black notebooks
+	poetry run isort notebooks
 
 # Run static code analysis
 static-code-analysis:

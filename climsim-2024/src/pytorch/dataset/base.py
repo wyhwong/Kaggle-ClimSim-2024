@@ -46,14 +46,14 @@ class DatasetBase(torch.utils.data.Dataset, ABC):
         self.input_cols = self.x_stats.columns.tolist()
         self.output_cols = self.y_stats.columns.tolist()
 
+        self._is_to_tensor = is_to_tensor
+        self._is_normalize = is_normalize
+        self._is_standardize = is_standardize
+
         self._x_min = self._x_norm_scaling = self._y_min = self._y_norm_scaling = np.array([])
         self._init_normalization_scaling()
         self._x_std_mean = self._x_std_scaling = self._y_std_mean = self._y_std_scaling = np.array([])
         self._init_standardization_scaling()
-
-        self._is_to_tensor = is_to_tensor
-        self._is_normalize = is_normalize
-        self._is_standardize = is_standardize
 
     def _init_normalization_scaling(self) -> None:
         """Get the scaling values for normalization"""

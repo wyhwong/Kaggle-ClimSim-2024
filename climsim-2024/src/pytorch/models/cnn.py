@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import torch
 from torch import nn
@@ -39,23 +39,13 @@ class CNN(ModelBase):
 
     def __init__(
         self,
-        steps_per_epoch: int,
         layers_hidden: Optional[nn.Sequential] = None,
+        scheduler_config: Optional[dict[str, Any]] = None,
         loss_fn: Optional[Callable] = None,
     ) -> None:
-        """
-        Initialize a convolutional neural network model for regression.
+        """CNN Constructor."""
 
-        Args:
-            steps_per_epoch (int): Number of steps per epoch
-            layers_hidden (Optional[nn.Sequential], optional): Hidden layers. Defaults to None.
-            loss_fn (Optional[Callable], optional): Loss function. Defaults to None.
-
-        Returns:
-            None
-        """
-
-        super().__init__(steps_per_epoch=steps_per_epoch, loss_fn=loss_fn)
+        super().__init__(scheduler_config=scheduler_config, loss_fn=loss_fn)
 
         self._conv_init = nn.Conv1d(in_channels=25, out_channels=64, kernel_size=1, padding="same")
         self._global_avg_pool = nn.AdaptiveAvgPool1d(60)

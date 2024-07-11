@@ -43,7 +43,7 @@ class BufferedParquetDataset(base.DatasetBase):
         self._hold_on_time = hold_on_time
 
         self._buffer_size = buffer_size
-        self._buffer: Queue[tuple[np.ndarray, np.ndarray] | tuple[torch.Tensor, torch.Tensor]] = Queue(
+        self._buffer: Queue[tuple[np.ndarray | torch.Tensor, np.ndarray | torch.Tensor]] = Queue(
             maxsize=self._buffer_size
         )
 
@@ -63,13 +63,13 @@ class BufferedParquetDataset(base.DatasetBase):
 
         return int(self._n_samples / self._batch_size)
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor] | tuple[np.ndarray, np.ndarray]:
+    def __getitem__(self, idx: int) -> tuple[np.ndarray | torch.Tensor, np.ndarray | torch.Tensor]:
         """Return the data at the given index from the buffer"""
 
         if not self._sampling_thread.is_alive():
             self.start_sampling_worker()
 
-        if idx == self._max_idx:
+        if idx + 1 == self.__len__():
             self.shutdown_sampling_worker()
             self.start_sampling_worker()
 
@@ -111,17 +111,14 @@ class BufferedParquetDataset(base.DatasetBase):
         self,
         df: pd.DataFrame,
         batch_size: Optional[int] = None,
-    ) -> tuple[np.ndarray, np.ndarray] | tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[np.ndarray | torch.Tensor, np.ndarray | torch.Tensor]:
         """Sample from a DataFrame"""
 
         batch_size = batch_size or self._batch_size
 
         samples = df.sample(batch_size)
         x, y = samples[self.input_cols].values, samples[self.output_cols].values
-
-        x, y = self._preprocess_x(x), self._preprocess_y(y)
-
-        return x, y
+        return self.preprocess_features(x), self.preprocess_targets(y)
 
     def _sampling_worker_fn(self) -> None:
         """Load batches in the background and populate the buffer queue"""
@@ -183,7 +180,7 @@ class BufferedParquetDataset(base.DatasetBase):
 
         return df
 
-    def get_batch(self, size: int) -> tuple[np.ndarray, np.ndarray] | tuple[torch.Tensor, torch.Tensor]:
+    def get_batch(self, size: int) -> tuple[np.ndarray | torch.Tensor, np.ndarray | torch.Tensor]:
         """Get a batch of data
         NOTE: This method is used for testing purposes only.
         """
@@ -192,8 +189,7 @@ class BufferedParquetDataset(base.DatasetBase):
             row_groups=self._get_rows_group(self._n_group_per_sampling),
         ).to_pandas()
 
-        x, y = self._sample_from_df(df=df, batch_size=size)
-        return self._preprocess_x(x), self._preprocess_y(y)
+        return self._sample_from_df(df=df, batch_size=size)
 
     def to_dataloader(self, **kwargs) -> torch.utils.data.DataLoader:
         """Return a torch DataLoader object"""
