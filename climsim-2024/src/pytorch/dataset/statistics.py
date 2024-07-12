@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
@@ -5,12 +7,18 @@ import pyarrow.parquet as pq
 from src.schemas.climsim import INPUT_COLUMNS, OUTPUT_COLUMNS
 
 
-def compute_dataset_statistics(parquet_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+def compute_dataset_statistics(
+    parquet_path: str,
+    input_cols: Optional[list[str]] = None,
+    output_cols: Optional[list[str]] = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Compute the mean and variance of the dataset.
 
     Args:
         parquet_path (str): Path to the parquet file
+        input_cols (Optional[list[str]]): Input columns
+        output_cols (Optional[list[str]]): Output columns
 
     Returns:
         pd.DataFrame: Mean and Variance of the inputs
@@ -19,11 +27,15 @@ def compute_dataset_statistics(parquet_path: str) -> tuple[pd.DataFrame, pd.Data
 
     parquet = pq.ParquetFile(parquet_path, memory_map=True, buffer_size=10)
 
+    input_cols = input_cols or INPUT_COLUMNS
+    output_cols = output_cols or OUTPUT_COLUMNS
+
     # Get the maximum and minimum values of the dataset
-    ds_min, ds_max = get_extremes(parquet)
-    x_min, x_max = ds_min[INPUT_COLUMNS], ds_max[INPUT_COLUMNS]
+    ds_min, ds_max = get_extremes(parquet, input_cols, output_cols)
+    x_min, x_max = ds_min[input_cols], ds_max[input_cols]
+    y_min, y_max = ds_min[output_cols], ds_max[output_cols]
+
     x_range = x_max - x_min
-    y_min, y_max = ds_min[OUTPUT_COLUMNS], ds_max[OUTPUT_COLUMNS]
     y_range = y_max - y_min
 
     x_scaling, y_scaling = x_range.copy(), y_range.copy()
@@ -35,14 +47,14 @@ def compute_dataset_statistics(parquet_path: str) -> tuple[pd.DataFrame, pd.Data
     grp_norm_x_mean, grp_norm_x_var, grp_norm_y_mean, grp_norm_y_var = [], [], [], []
     for row_group in range(parquet.num_row_groups):
         df_grp = parquet.read_row_group(row_group).to_pandas()
-        grp_x_mean.append(df_grp[INPUT_COLUMNS].mean())
-        grp_x_var.append(df_grp[INPUT_COLUMNS].var())
-        grp_y_mean.append(df_grp[OUTPUT_COLUMNS].mean())
-        grp_y_var.append(df_grp[OUTPUT_COLUMNS].var())
+        grp_x_mean.append(df_grp[input_cols].mean())
+        grp_x_var.append(df_grp[input_cols].var())
+        grp_y_mean.append(df_grp[output_cols].mean())
+        grp_y_var.append(df_grp[output_cols].var())
         grp_nrows.append(df_grp.shape[0])
 
-        grp_norm_x = (df_grp[INPUT_COLUMNS] - x_min) / x_scaling
-        grp_norm_y = (df_grp[OUTPUT_COLUMNS] - y_min) / y_scaling
+        grp_norm_x = (df_grp[input_cols] - x_min) / x_scaling
+        grp_norm_y = (df_grp[output_cols] - y_min) / y_scaling
         grp_norm_x_mean.append(grp_norm_x.mean())
         grp_norm_x_var.append(grp_norm_x.var())
         grp_norm_y_mean.append(grp_norm_y.mean())
@@ -133,19 +145,25 @@ def combine_var_from_groups(df_var: pd.DataFrame, df_mean: pd.DataFrame, grp_nro
     return var
 
 
-def get_extremes(parquet: pq.ParquetFile) -> tuple[pd.Series, pd.Series]:
+def get_extremes(
+    parquet: pq.ParquetFile,
+    input_cols: list[str],
+    output_cols: list[str],
+) -> tuple[pd.Series, pd.Series]:
     """
     Get the maximum and minimum values of the dataset.
 
     Args:
         parquet (pq.ParquetFile): Parquet file
+        input_cols (list[str]): Input columns
+        output_cols (list[str]): Output columns
 
     Returns:
         pd.Series: Minimum values of the dataset
         pd.Series: Maximum values of the dataset
     """
 
-    cols = INPUT_COLUMNS + OUTPUT_COLUMNS
+    cols = input_cols + output_cols
     max_values = {col: -np.inf for col in cols}
     min_values = {col: np.inf for col in cols}
 

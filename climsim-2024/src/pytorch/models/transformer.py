@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import torch
 import torch.nn as nn
@@ -15,18 +15,18 @@ class Transformer(ModelBase):
 
     def __init__(
         self,
-        steps_per_epoch: int,
         input_dim: int = 556,
         output_dim: int = 368,
         hidden_dim: int = 512,
         num_layers: int = 6,
         num_heads: int = 8,
         dropout: float = 0.1,
+        scheduler_config: Optional[dict[str, Any]] = None,
         loss_fn: Optional[Callable] = None,
     ) -> None:
         """Initialize the model."""
 
-        super().__init__(steps_per_epoch=steps_per_epoch, loss_fn=loss_fn or nn.CrossEntropyLoss())
+        super().__init__(scheduler_config=scheduler_config, loss_fn=loss_fn or nn.CrossEntropyLoss())
 
         self._input_dim = input_dim
         self._output_dim = output_dim

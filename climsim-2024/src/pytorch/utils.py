@@ -4,7 +4,6 @@ from typing import Optional
 import lightning
 from lightning.pytorch.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 
-import src.env
 import src.logger
 
 
@@ -14,16 +13,16 @@ local_logger = src.logger.get_logger(__name__)
 def get_default_trainer(
     deterministic: bool,
     model_name: str,
-    max_epochs: int = src.env.N_EPOCHS,
-    max_time: datetime.timedelta = datetime.timedelta(hours=src.env.MAXIMUM_TRAINING_TIME_IN_HOUR),
+    max_epochs: int = 100,
+    max_time: datetime.timedelta = datetime.timedelta(days=3),
     log_every_n_steps=10,
     check_val_every_n_epoch: int = 3,
     callbacks: Optional[list[lightning.pytorch.callbacks.Callback]] = None,
     use_distributed_sampler: bool = False,
+    random_seed: int = 2024,
     **kwargs,
 ) -> lightning.pytorch.Trainer:
-    """
-    Get the default trainer for the model.
+    """Get the default trainer for the model.
 
     Args:
         deterministic (bool): Whether to use deterministic training
@@ -34,12 +33,13 @@ def get_default_trainer(
         check_val_every_n_epoch (int, optional): Check validation every n epochs. Defaults to 3.
         callbacks (Optional[list[lightning.pytorch.callbacks.Callback]], optional): The callbacks. Defaults to None.
         use_distributed_sampler (bool, optional): Use distributed sampler. Defaults to False.
+        random_seed (int, optional): The random seed. Defaults to 2024.
 
     Returns:
         lightning.pytorch.Trainer: The trainer object
     """
 
-    lightning.pytorch.seed_everything(src.env.RANDOM_SEED, workers=True)
+    lightning.pytorch.seed_everything(random_seed, workers=True)
 
     base_dirpath = "./models"
     version = datetime.datetime.now(tz=datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -53,7 +53,7 @@ def get_default_trainer(
             ),
             EarlyStopping(
                 monitor="val_loss",
-                patience=5,
+                patience=10,
                 verbose=True,
                 mode="min",
             ),
