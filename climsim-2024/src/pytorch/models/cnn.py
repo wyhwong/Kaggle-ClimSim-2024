@@ -61,10 +61,10 @@ class CNN(ModelBase):
         super().__init__(scheduler_config=scheduler_config, loss_fn=loss_fn)
 
         if layers_hidden is None:
-            layers_hidden = [25, 64, 256, 128, 64, 14]
+            layers_hidden = [25, 128, 64, 14]
 
         if kernal_size_hidden is None:
-            kernal_size_hidden = [1, 3, 3, 3, 1]
+            kernal_size_hidden = [3, 3, 3]
 
         layers: list[nn.Module] = []
         for i in range(len(layers_hidden) - 2):
