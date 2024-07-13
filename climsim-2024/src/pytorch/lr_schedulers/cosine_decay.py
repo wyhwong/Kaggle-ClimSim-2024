@@ -21,7 +21,22 @@ class CosineDecayLR(torch.optim.lr_scheduler.LambdaLR):
         last_epoch=-1,
         verbose=False,
     ) -> None:
-        """Cosine Decay Learning Rate Scheduler."""
+        """CosinceDecayLR constructor.
+
+        Args:
+            optimizer (torch.optim.Optimizer): The optimizer
+            initial_lr (float): The initial learning rate
+            maximum_lr (float): The maximum learning rate
+            alpha (float): The alpha value
+            warmup_epochs (int): The number of warmup epochs
+            decay_epochs (int): The number of decay epochs
+            steps_per_epoch (int): The number of steps per epoch
+            last_epoch (int): The last epoch
+            verbose (bool): Whether to print the learning rate
+
+        Methods (excluding inherited methods):
+            _lr_lambda: Learning rate function
+        """
 
         self._initial_lr = initial_lr
         self._maximum_lr = maximum_lr
@@ -43,7 +58,7 @@ class CosineDecayLR(torch.optim.lr_scheduler.LambdaLR):
             step (int): The current step
 
         Returns:
-            float: The learning rate
+            lr (float): The learning rate
         """
 
         if step < self._warmup_steps:

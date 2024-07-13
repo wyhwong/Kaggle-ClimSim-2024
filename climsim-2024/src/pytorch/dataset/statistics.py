@@ -12,8 +12,8 @@ def compute_dataset_statistics(
     input_cols: Optional[list[str]] = None,
     output_cols: Optional[list[str]] = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Compute the mean and variance of the dataset.
+    """Compute the mean and variance of the dataset.
+    TODO: Refactor this function
 
     Args:
         parquet_path (str): Path to the parquet file
@@ -21,8 +21,8 @@ def compute_dataset_statistics(
         output_cols (Optional[list[str]]): Output columns
 
     Returns:
-        pd.DataFrame: Mean and Variance of the inputs
-        pd.DataFrame: Mean and Variance of the outputs
+        df_x_stats (pd.DataFrame): Mean and Variance of the inputs
+        df_y_stats (pd.DataFrame): Mean and Variance of the outputs
     """
 
     parquet = pq.ParquetFile(parquet_path, memory_map=True, buffer_size=10)
@@ -31,7 +31,7 @@ def compute_dataset_statistics(
     output_cols = output_cols or OUTPUT_COLUMNS
 
     # Get the maximum and minimum values of the dataset
-    ds_min, ds_max = get_extremes(parquet, input_cols, output_cols)
+    ds_min, ds_max = _get_extremes(parquet, input_cols, output_cols)
     x_min, x_max = ds_min[input_cols], ds_max[input_cols]
     y_min, y_max = ds_min[output_cols], ds_max[output_cols]
 
@@ -73,13 +73,13 @@ def compute_dataset_statistics(
 
     x_mean = df_grp_x_mean.apply(lambda x: (x * ds_nrows).sum() / ds_nrows.sum())
     y_mean = df_grp_y_mean.apply(lambda x: (x * ds_nrows).sum() / ds_nrows.sum())
-    x_var = combine_var_from_groups(df_var=df_grp_x_var, df_mean=df_grp_x_mean, grp_nrows=ds_nrows)
-    y_var = combine_var_from_groups(df_var=df_grp_y_var, df_mean=df_grp_y_mean, grp_nrows=ds_nrows)
+    x_var = _combine_var_from_groups(df_var=df_grp_x_var, df_mean=df_grp_x_mean, grp_nrows=ds_nrows)
+    y_var = _combine_var_from_groups(df_var=df_grp_y_var, df_mean=df_grp_y_mean, grp_nrows=ds_nrows)
 
     norm_x_mean = df_grp_norm_x_mean.apply(lambda x: (x * ds_nrows).sum() / ds_nrows.sum())
     norm_y_mean = df_grp_norm_y_mean.apply(lambda x: (x * ds_nrows).sum() / ds_nrows.sum())
-    norm_x_var = combine_var_from_groups(df_var=df_grp_norm_x_var, df_mean=df_grp_norm_x_mean, grp_nrows=ds_nrows)
-    norm_y_var = combine_var_from_groups(df_var=df_grp_norm_y_var, df_mean=df_grp_norm_y_mean, grp_nrows=ds_nrows)
+    norm_x_var = _combine_var_from_groups(df_var=df_grp_norm_x_var, df_mean=df_grp_norm_x_mean, grp_nrows=ds_nrows)
+    norm_y_var = _combine_var_from_groups(df_var=df_grp_norm_y_var, df_mean=df_grp_norm_y_mean, grp_nrows=ds_nrows)
 
     df_x_stats = pd.DataFrame(
         {
@@ -111,9 +111,8 @@ def compute_dataset_statistics(
     return (df_x_stats, df_y_stats)
 
 
-def combine_var_from_groups(df_var: pd.DataFrame, df_mean: pd.DataFrame, grp_nrows: pd.Series) -> pd.Series:
-    """
-    Combine the variance of different groups.
+def _combine_var_from_groups(df_var: pd.DataFrame, df_mean: pd.DataFrame, grp_nrows: pd.Series) -> pd.Series:
+    """Combine the variance of different groups.
     Reference: https://math.stackexchange.com/questions/2971315/how-do-i-combine-standard-deviations-of-two-groups
     mean = (n1 * mean1 + n2 * mean2) / (n1 + n2)
     variance = ( ( n1 - 1 ) * var1 + ( n2 - 1 ) * var2 ) / ( n1 + n2 - 1 )
@@ -125,7 +124,7 @@ def combine_var_from_groups(df_var: pd.DataFrame, df_mean: pd.DataFrame, grp_nro
         grp_nrows (pd.Series): Number of rows in each group
 
     Returns:
-        pd.Series: Combined variance
+        var (pd.Series): Combined variance
     """
 
     var = df_var.iloc[0]
@@ -145,13 +144,12 @@ def combine_var_from_groups(df_var: pd.DataFrame, df_mean: pd.DataFrame, grp_nro
     return var
 
 
-def get_extremes(
+def _get_extremes(
     parquet: pq.ParquetFile,
     input_cols: list[str],
     output_cols: list[str],
 ) -> tuple[pd.Series, pd.Series]:
-    """
-    Get the maximum and minimum values of the dataset.
+    """Get the maximum and minimum values of the dataset.
 
     Args:
         parquet (pq.ParquetFile): Parquet file
@@ -159,8 +157,8 @@ def get_extremes(
         output_cols (list[str]): Output columns
 
     Returns:
-        pd.Series: Minimum values of the dataset
-        pd.Series: Maximum values of the dataset
+        ds_min (pd.Series): Minimum values of the dataset
+        ds_max (pd.Series): Maximum values of the dataset
     """
 
     cols = input_cols + output_cols

@@ -12,8 +12,16 @@ import src.schemas.climsim
 local_logger = src.logger.get_logger(__name__)
 
 
-def get_underperforming_mask(y_hat: torch.Tensor, y: torch.Tensor) -> np.ndarray:
-    """Get a mask for underperforming targets."""
+def _get_underperforming_mask(y_hat: torch.Tensor, y: torch.Tensor) -> np.ndarray:
+    """Get a mask for underperforming targets.
+
+    Args:
+        y_hat (torch.Tensor): The predicted values
+        y (torch.Tensor): The target values
+
+    Returns:
+        mask (np.ndarray): The mask for underperforming targets
+    """
 
     mean_targets = torch.mean(y, dim=0)
 
@@ -37,14 +45,14 @@ def output_submission_parquet(
     calibration_batch_size: int = 16348,
     output_dir: str = ".",
 ) -> pd.DataFrame:
-    """
-    Output the submission file in the format of a gzipped parquet file.
-    TODO: Replace pandas with polars for better performance.
+    """Output the submission file in the format of a gzipped parquet file.
+    NOTE: The goal of calibration is to replace the underperforming targets with the mean.
+          So that the model does not make predictions that are worse than the mean.
 
     Args:
         model (nn.Module): The model to be used for inference
         dataset (src.pytorch.dataset.base.DatasetBase): The dataset object (used for training)
-        df (pd.DataFrame): The input data
+        df (pd.DataFrame): The input data (features)
         weights (pd.DataFrame): The weights for each output column
         calibration_batch_size (int): The batch size for calibration
         output_dir (str): The output directory
@@ -53,18 +61,17 @@ def output_submission_parquet(
         pd.DataFrame: The output data
     """
 
-    inputs_set = dataset.preprocess_features(df.loc[:, dataset.input_cols].values)
-    outputs_set = []
-
+    # Set the model to evaluation mode
     model.eval()
 
-    # Do calibration
-    # Find which outputs are underperforming
+    # Calibration: Find which outputs are underperforming
     x, y = dataset.get_batch(size=calibration_batch_size)
     y_hat = model(x)
-    mask = get_underperforming_mask(y_hat, y)
+    mask = _get_underperforming_mask(y_hat=y_hat, y=y)
 
-    # Use tqdm for progress bar
+    # Inference for submission
+    inputs_set = dataset.preprocess_features(x=df.loc[:, dataset.input_cols].values)
+    outputs_set: list[np.ndarray] = []
     for i in tqdm(range(len(inputs_set)), desc="Processing Samples"):
         inputs = inputs_set[i : i + 1]
         with torch.no_grad():
@@ -86,10 +93,13 @@ def output_submission_parquet(
     for col in dataset.output_cols:
         df_output[col] *= weights[col]
 
-    # Add the ptend columns
+    # Replace some columns with static values (according to the competition)
     for idx in range(12, 30):
-        df_output[f"ptend_q0002_{idx}"] = -df[f"state_q0002_{idx}"].to_numpy() / 1200
+        df_output[f"ptend_q0002_{idx}"] = -df[f"state_q0002_{idx}"].to_numpy() / 1200.0
 
+    # Save the submission file
+    # NOTE: Here we do not use compression=gzip because Kaggle failed to read the file
+    # TODO: Use python gzip library to compress the file and test if Kaggle can read it
     df_output.to_parquet(
         path=f"{output_dir}/submission.parquet",
         index=False,

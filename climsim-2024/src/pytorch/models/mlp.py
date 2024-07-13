@@ -19,7 +19,19 @@ class MLP(ModelBase):
         scheduler_config: Optional[dict[str, Any]] = None,
         loss_fn: Optional[Callable] = None,
     ) -> None:
-        """MLP Constructor."""
+        """MLP Constructor.
+
+        Args:
+            layers_hidden: hidden layer sizes
+            scheduler_config: scheduler configuration
+            loss_fn: loss function
+
+        Attributes:
+            _layers: hidden layers
+
+        Methods:
+            forward: Forward pass through the network
+        """
 
         super().__init__(scheduler_config=scheduler_config, loss_fn=loss_fn)
 

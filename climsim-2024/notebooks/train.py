@@ -4,7 +4,7 @@ import torch
 from lightning import LightningDataModule
 from torch.utils.data import random_split
 
-from src.pytorch.dataset import FileDataset, compute_dataset_statistics
+from src.pytorch.dataset import MemoryParquetDataset, compute_dataset_statistics
 from src.pytorch.models.mlp import MLP
 from src.pytorch.utils import get_default_trainer
 
@@ -37,7 +37,7 @@ class ClimSimDataModule(LightningDataModule):
 
         super().__init__()
 
-        dataset = FileDataset(
+        dataset = MemoryParquetDataset(
             source=TRAINSET_PATH,
             x_stats=X_STATS_PATH,
             y_stats=Y_STATS_PATH,

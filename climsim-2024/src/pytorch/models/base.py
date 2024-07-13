@@ -22,11 +22,31 @@ class ModelBase(lightning.LightningModule, ABC):
         scheduler_config: Optional[dict[str, Any]] = None,
         loss_fn: Optional[Callable] = None,
     ) -> None:
-        """Initialize the model.
+        """ModelBase constructor.
 
         Args:
-            steps_per_epoch (int): Number of steps per epoch
-            loss_fn (Optional[Callable], optional): Loss function. Defaults to None.
+            scheduler_config (Optional[dict[str, Any]]): Scheduler configuration
+            loss_fn (Optional[Callable]): Loss function
+
+        Attributes:
+            _loss_fn (Optional[Callable]): Loss function
+            _scheduler_config (Optional[dict[str, Any]]): Scheduler configuration
+            _batch_loss (dict[str, list[float]]): Batch loss
+            _batch_r2 (dict[str, list[float]]): Batch R2
+            _best_loss (dict[str, float]): Best loss
+            _best_r2 (dict[str, float]): Best R2
+
+        Methods:
+            replace_optimizers: Replace the optimizers and schedulers
+            _common_step: Common step for training and validation
+            training_step: Training step
+            validation_step: Validation step
+            test_step: Test step
+            _common_epoch_end: Common epoch end for training and validation
+            on_train_epoch_end: Called at the end of the training epoch
+            on_validation_epoch_end: Called at the end of the validation epoch
+            configure_optimizers: Configure the optimizers and schedulers
+            forward: Forward pass of the model
         """
 
         super().__init__()
@@ -63,7 +83,15 @@ class ModelBase(lightning.LightningModule, ABC):
         optimizers: list[torch.optim.Optimizer],
         schedulers: list[torch.optim.lr_scheduler.LRScheduler],
     ) -> None:
-        """Replace the optimizers and schedulers."""
+        """Replace the optimizers and schedulers.
+
+        Args:
+            optimizers (list[torch.optim.Optimizer]): Optimizers
+            schedulers (list[torch.optim.lr_scheduler.LRScheduler]): Schedulers
+
+        Returns:
+            None
+        """
 
         self._optimizers = optimizers
         self._schedulers = schedulers

@@ -13,8 +13,7 @@ def get_logger(
     file_log_level: int = src.env.FILE_LOG_LEVEL,
     log_filepath: Optional[str] = src.env.LOG_FILEPATH,
 ) -> logging.Logger:
-    """
-    Get logger with stream and file handlers (if log_filepath is provided)
+    """Get logger with stream and file handlers (if log_filepath is provided)
 
     Args:
         logger_name (str): Logger name
@@ -23,7 +22,7 @@ def get_logger(
         log_filepath (str): Log filepath
 
     Returns:
-        logging.Logger: Logger
+        logger (logging.Logger): Logger
     """
 
     # Initialize logger object

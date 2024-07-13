@@ -10,17 +10,17 @@ from src.pytorch.models.base import ModelBase
 local_logger = src.logger.get_logger(__name__)
 
 
-# Checked with https://www.kaggle.com/code/abiolatti/keras-baseline-seq2seq
-# Same results as keras implementation
 def to_sequential_features(x: torch.Tensor) -> torch.Tensor:
-    """
-    Convert the input tensor to sequential features. (For ClimSim dataset only)
+    """Convert the input tensor to sequential features.
+    NOTE: This function is for ClimSim dataset only
+    Checked with https://www.kaggle.com/code/abiolatti/keras-baseline-seq2seq
+    Same results as keras implementation
 
     Args:
-        x: The input tensor.
+        x (torch.Tensor): The input tensor.
 
     Returns:
-        The input tensor converted to sequential features
+        x (torch.Tensor): The reshaped input tensor.
     """
 
     # Reshape and transpose components
@@ -43,16 +43,21 @@ class CNN(ModelBase):
         scheduler_config: Optional[dict[str, Any]] = None,
         loss_fn: Optional[Callable] = None,
     ) -> None:
-        """CNN Constructor."""
+        """CNN Constructor.
+
+        Args:
+            layers_hidden (Optional[nn.Sequential]): The hidden layers
+            scheduler_config (Optional[dict[str, Any]]): The scheduler configuration
+            loss_fn (Optional[Callable]): The loss function
+
+        Attributes:
+            _layers (nn.Sequential): The hidden layers
+        """
 
         super().__init__(scheduler_config=scheduler_config, loss_fn=loss_fn)
 
-        self._conv_init = nn.Conv1d(in_channels=25, out_channels=64, kernel_size=1, padding="same")
-        self._global_avg_pool = nn.AdaptiveAvgPool1d(60)
-        self._conv_final = nn.Conv1d(64, 14, kernel_size=1, padding="same")
-        self._batch_norm = nn.BatchNorm1d(64)
-
         self._layers = layers_hidden or nn.Sequential(
+            nn.Conv1d(in_channels=25, out_channels=64, kernel_size=1, padding="same"),
             nn.Conv1d(in_channels=64, out_channels=256, kernel_size=3, padding="same"),
             nn.ReLU(),
             nn.BatchNorm1d(256),
@@ -62,6 +67,7 @@ class CNN(ModelBase):
             nn.Conv1d(128, 64, kernel_size=3, padding="same"),
             nn.ReLU(),
             nn.BatchNorm1d(64),
+            nn.Conv1d(64, 14, kernel_size=1, padding="same"),
         )
 
         super().__post_init__()
@@ -70,13 +76,7 @@ class CNN(ModelBase):
         """Forward pass of the model."""
 
         x = to_sequential_features(x)
-        e0 = self._conv_init(x)
-        e = self._layers(e0)
-        e = e0 + e + self._global_avg_pool(e)
-        e = self._batch_norm(e)
-        e = e + self._layers(e)
-
-        p_all = self._conv_final(e)
+        p_all = self._layers(x)
 
         p_seq = p_all[:, :6, :]
         p_seq = p_seq.permute(0, 2, 1).reshape(p_seq.shape[0], -1)

@@ -1,7 +1,8 @@
-# Clim-Sim 2024
+# Run in Poetry Environment
 
 ## Prerequisites
-- GNU make:[https://www.gnu.org/software/make/manual/make.html](https://www.gnu.org/software/make/manual/make.html)
+- [GNU make](https://www.gnu.org/software/make/manual/make.html)
+- [Poetry](https://python-poetry.org/)
 
 ## Installation
 
@@ -31,4 +32,11 @@ make format
 
 # Update dependencies
 make update
+```
+
+## Submission of Results
+
+```bash
+# Check your ~/.kaggle/kaggle.json is set up
+FILEPATH=< filepath to the parquet/csv file > make submit
 ```

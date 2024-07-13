@@ -7,8 +7,7 @@ local_logger = src.logger.get_logger(__name__)
 
 
 def check_and_create_dir(dirpath: str) -> None:
-    """
-    Check if the directory exists, if not, create it.
+    """Check if the directory exists, if not, create it.
 
     Args:
         dirpath (str): Directory path

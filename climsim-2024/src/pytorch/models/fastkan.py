@@ -1,8 +1,8 @@
 """
-    This implementation is based on Approximation of Kolmogorov-Arnold Network
-    Original implementation: https://github.com/ZiyaoLi/fast-kan
+This implementation is based on Approximation of Kolmogorov-Arnold Network
+Original implementation: https://github.com/ZiyaoLi/fast-kan
 
-    Here we change it to be capable of training with torch lightning
+Here we change it to be capable of training with torch lightning
 """
 
 from typing import Any, Callable, Optional
@@ -28,14 +28,19 @@ class SplineLinear(nn.Linear):
         init_scale: float = 0.1,
         **kwargs,
     ) -> None:
-        """
+        """SplineLinear constructor
+
         Args:
             in_features: size of each input sample
             out_features: size of each output sample
             init_scale: standard deviation of the truncated normal distribution
+            **kwargs: additional arguments
 
-        Returns:
-            None
+        Attributes:
+            init_scale: standard deviation of the truncated normal distribution
+
+        Methods:
+            reset_parameters: Initialize the weight with a truncated normal distribution
         """
 
         self.init_scale = init_scale
@@ -57,15 +62,20 @@ class RadialBasisFunction(lightning.LightningModule):
         num_grids: int = 8,
         denominator: Optional[float] = None,  # larger denominators lead to smoother basis
     ):
-        """
+        """RadialBasisFunction constructor
+
         Args:
             grid_min: minimum value of the grid
             grid_max: maximum value of the grid
             num_grids: number of grids
-            denominator: denominator of the Gaussian function
+            denominator: denominator for the radial basis function
 
-        Returns:
-            None
+        Attributes:
+            grid: grid values
+            denominator: denominator for the radial basis
+
+        Methods:
+            forward: Compute the radial basis function
         """
 
         super().__init__()
@@ -74,7 +84,7 @@ class RadialBasisFunction(lightning.LightningModule):
         self.grid = torch.nn.Parameter(grid, requires_grad=False)
         self.denominator = denominator or (grid_max - grid_min) / (num_grids - 1)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Compute the radial basis function"""
 
         return torch.exp(-(((x[..., None] - self.grid) / self.denominator) ** 2))
@@ -94,7 +104,8 @@ class FastKANLayer(lightning.LightningModule):
         base_activation=nn.functional.silu,
         spline_weight_init_scale: float = 0.1,
     ) -> None:
-        """
+        """FastKANLayer constructor
+
         Args:
             input_dim: size of each input sample
             output_dim: size of each output sample
@@ -105,11 +116,20 @@ class FastKANLayer(lightning.LightningModule):
             base_activation: activation function for the base update
             spline_weight_init_scale: standard deviation of the truncated normal distribution
 
-        Returns:
-            None
+        Attributes:
+            layernorm: layer normalization
+            rbf: radial basis function
+            spline_linear: spline linear layer
+            use_base_update: whether to use base update
+            base_activation: activation function for the base update
+            base_linear: base linear layer
+
+        Methods:
+            forward: Forward pass through the network
         """
 
         super().__init__()
+
         self.layernorm = nn.LayerNorm(input_dim)
         self.rbf = RadialBasisFunction(grid_min, grid_max, num_grids)
         self.spline_linear = SplineLinear(input_dim * num_grids, output_dim, spline_weight_init_scale)
@@ -118,20 +138,10 @@ class FastKANLayer(lightning.LightningModule):
             self.base_activation = base_activation
             self.base_linear = nn.Linear(input_dim, output_dim)
 
-    def forward(self, x: torch.Tensor, time_benchmark=False) -> torch.Tensor:
-        """
-        Args:
-            x: input tensor
-            time_benchmark: whether to benchmark the computation time
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass through the network"""
 
-        Returns:
-            output tensor
-        """
-
-        if not time_benchmark:
-            spline_basis = self.rbf(self.layernorm(x))
-        else:
-            spline_basis = self.rbf(x)
+        spline_basis = self.rbf(self.layernorm(x))
         ret = self.spline_linear(spline_basis.view(*spline_basis.shape[:-2], -1))
         if self.use_base_update:
             base = self.base_linear(self.base_activation(x))
@@ -154,10 +164,10 @@ class FastKAN(ModelBase):
         base_activation=nn.functional.silu,
         spline_weight_init_scale: float = 0.1,
     ) -> None:
-        """Initialize the model.
+        """FastKAN constructor
 
         Args:
-            layers_hidden: list of hidden layer sizes
+            layers_hidden: hidden layer sizes
             scheduler_config: scheduler configuration
             loss_fn: loss function
             grid_min: minimum value of the grid
@@ -167,8 +177,11 @@ class FastKAN(ModelBase):
             base_activation: activation function for the base update
             spline_weight_init_scale: standard deviation of the truncated normal distribution
 
-        Returns:
-            None
+        Attributes:
+            _layers: hidden layers
+
+        Methods:
+            forward: Forward pass through the network
         """
 
         super().__init__(scheduler_config=scheduler_config, loss_fn=loss_fn)
@@ -196,4 +209,5 @@ class FastKAN(ModelBase):
 
         for layer in self._layers:
             x = layer(x)
+
         return x

@@ -35,7 +35,37 @@ class BufferedParquetDataset(base.DatasetBase):
         is_normalize: bool = False,
         is_standardize: bool = True,
     ) -> None:
-        """BufferedParquetDataset constructor"""
+        """BufferedParquetDataset constructor
+
+        Args:
+            source (str): The path to the dataset
+            x_stats (str): The path to the x statistics (parquet file)
+            y_stats (str): The path to the y statistics (parquet file)
+            batch_size (int): The batch size
+            buffer_size (int): The buffer size
+            hold_on_time (float): The time to hold on
+            n_group_per_sampling (int): The number of groups per sampling
+            groups (list[int]): The groups
+            device (str): The device to use
+            is_to_tensor (bool): Whether to convert to tensor
+            is_normalize (bool): Whether to normalize the data
+            is_standardize (bool): Whether to standardize the data
+
+        Methods (excluding inherited methods):
+            __len__: Return the length of the dataset (unit in batch)
+            __getitem__: Return the data at the given index from the buffer
+            start_sampling_worker: Start the worker threads
+            shutdown_sampling_worker: Shutdown the threads
+            clean_up: Clean up the resources
+            _get_rows_group: Return a random group
+            _sample_from_df: Sample from a DataFrame
+            _sampling_worker_fn: Load batches in the background and populate the buffer queue
+            _sleep_if_memory_high: Sleep if the memory usage is high
+            _sleep_if_buffer_full: Sleep if the buffer queue is full
+            generate_tiny_dataset: Generate a tiny dataset
+            get_batch: Get a batch of data
+            to_dataloader: Return a torch DataLoader object
+        """
 
         super().__init__(source, x_stats, y_stats, device, is_to_tensor, is_normalize, is_standardize)
 
@@ -67,18 +97,18 @@ class BufferedParquetDataset(base.DatasetBase):
         """Return the data at the given index from the buffer"""
 
         if not self._sampling_thread.is_alive():
-            self.start_sampling_worker()
+            self._start_sampling_worker()
 
         if idx + 1 == self.__len__():
-            self.shutdown_sampling_worker()
-            self.start_sampling_worker()
+            self._shutdown_sampling_worker()
+            self._start_sampling_worker()
 
         if self._buffer.empty():
             local_logger.debug("Buffer queue is empty. Waiting for batches to be loaded...")
 
         return self._buffer.get()
 
-    def start_sampling_worker(self) -> None:
+    def _start_sampling_worker(self) -> None:
         """Start the worker threads"""
 
         self._lock.acquire()
@@ -88,7 +118,7 @@ class BufferedParquetDataset(base.DatasetBase):
         self._lock.release()
         local_logger.debug("Sampling thread has been started.")
 
-    def shutdown_sampling_worker(self) -> None:
+    def _shutdown_sampling_worker(self) -> None:
         """Shutdown the threads"""
 
         self._lock.acquire()
@@ -100,6 +130,9 @@ class BufferedParquetDataset(base.DatasetBase):
     def clean_up(self) -> None:
         """Clean up the resources"""
 
+        if self._sampling_thread.is_alive():
+            self._shutdown_sampling_worker()
+
         self._buffer.queue.clear()
 
     def _get_rows_group(self, size: int) -> np.ndarray:
@@ -108,9 +141,7 @@ class BufferedParquetDataset(base.DatasetBase):
         return np.random.choice(self._groups, size=size, replace=False)
 
     def _sample_from_df(
-        self,
-        df: pd.DataFrame,
-        batch_size: Optional[int] = None,
+        self, df: pd.DataFrame, batch_size: Optional[int] = None
     ) -> tuple[np.ndarray | torch.Tensor, np.ndarray | torch.Tensor]:
         """Sample from a DataFrame"""
 
@@ -160,7 +191,14 @@ class BufferedParquetDataset(base.DatasetBase):
             sleep(self._hold_on_time)
 
     def generate_tiny_dataset(self, n_samples: int = 100) -> pd.DataFrame:
-        """Generate a tiny dataset"""
+        """Generate a tiny dataset from the parquet file
+
+        Args:
+            n_samples (int): The number of samples
+
+        Returns:
+            df (pd.DataFrame): The tiny dataset
+        """
 
         n_samples_per_group = n_samples // len(self._groups)
         dfs: list[pd.DataFrame] = []
@@ -183,6 +221,17 @@ class BufferedParquetDataset(base.DatasetBase):
     def get_batch(self, size: int) -> tuple[np.ndarray | torch.Tensor, np.ndarray | torch.Tensor]:
         """Get a batch of data
         NOTE: This method is used for testing purposes only.
+
+        Args:
+            size (int): The batch size
+
+        Returns:
+            x (np.ndarray | torch.Tensor): The input data
+                - np.ndarray: if is_to_tensor is False
+                - torch.Tensor: if is_to_tensor is True
+            y (np.ndarray | torch.Tensor): The output data
+                - np.ndarray: if is_to_tensor is False
+                - torch.Tensor: if is_to_tensor is True
         """
 
         df = self._parquet.read_row_groups(
@@ -192,7 +241,15 @@ class BufferedParquetDataset(base.DatasetBase):
         return self._sample_from_df(df=df, batch_size=size)
 
     def to_dataloader(self, **kwargs) -> torch.utils.data.DataLoader:
-        """Return a torch DataLoader object"""
+        """Return a torch DataLoader object
+        NOTE: This dataloader uses BatchSampler to return a batch of data.
+
+        Args:
+            **kwargs: Additional arguments for DataLoader
+
+        Returns:
+            dataloader (torch.utils.data.DataLoader): The DataLoader object
+        """
 
         return torch.utils.data.DataLoader(
             self,
