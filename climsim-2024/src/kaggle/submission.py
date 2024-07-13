@@ -99,7 +99,7 @@ def output_submission_parquet(
 
     # Save the submission file
     # NOTE: Here we do not use compression=gzip because Kaggle failed to read the file
-    # TODO: Use python gzip library to compress the file and test if Kaggle can read it
+    #       Also, gzip compression does not save much space because parquet format is already efficient
     df_output.to_parquet(
         path=f"{output_dir}/submission.parquet",
         index=False,
