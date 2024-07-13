@@ -5,7 +5,7 @@ from lightning import LightningDataModule
 from torch.utils.data import random_split
 
 from src.pytorch.dataset import MemoryParquetDataset, compute_dataset_statistics
-from src.pytorch.models.mlp import MLP
+from src.pytorch.models import MLP
 from src.pytorch.utils import get_default_trainer
 
 
@@ -72,7 +72,7 @@ def train_model():
     """Train the model."""
 
     datamodule = ClimSimDataModule()
-    model = MLP(layers_hidden=[556, 1024, 512, 368])
+    model = MLP()
 
     # Set optimizer and scheduler
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)

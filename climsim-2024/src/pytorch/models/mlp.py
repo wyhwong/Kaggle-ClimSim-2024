@@ -15,7 +15,7 @@ class MLP(ModelBase):
 
     def __init__(
         self,
-        layers_hidden: list[int],
+        layers_hidden: Optional[list[int]] = None,
         scheduler_config: Optional[dict[str, Any]] = None,
         loss_fn: Optional[Callable] = None,
     ) -> None:
@@ -32,6 +32,9 @@ class MLP(ModelBase):
         Methods:
             forward: Forward pass through the network
         """
+
+        if layers_hidden is None:
+            layers_hidden = [556, 1024, 512, 368]
 
         super().__init__(scheduler_config=scheduler_config, loss_fn=loss_fn)
 
