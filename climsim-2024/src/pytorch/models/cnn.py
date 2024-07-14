@@ -54,6 +54,9 @@ class CNN(ModelBase):
             scheduler_config (dict[str, Any]): Scheduler configuration
             loss_fn (Callable): Loss function
 
+        raises:
+            ValueError: If the number of hidden layers is not one less than the number of kernel sizes
+
         Attributes:
             _layers (nn.Sequential): The hidden layers
         """
@@ -65,6 +68,11 @@ class CNN(ModelBase):
 
         if kernal_size_hidden is None:
             kernal_size_hidden = [3, 3, 3]
+
+        if len(layers_hidden) - 1 != len(kernal_size_hidden):
+            message = "The number of hidden layers should be one less than the number of kernel sizes."
+            local_logger.error(message)
+            raise ValueError(message)
 
         layers: list[nn.Module] = []
         for i in range(len(layers_hidden) - 2):
