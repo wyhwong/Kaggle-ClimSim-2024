@@ -23,20 +23,29 @@ def get_default_trainer(
     **kwargs,
 ) -> lightning.pytorch.Trainer:
     """Get the default trainer for the model.
+    NOTE: By default, the trainer will:
+        - seed_everything
+        - log learning rate, momentum, and weight decay
+        - early stop based on validation loss
+        - save the best model based on validation loss
+        - save the model every 5 epochs
+        - log to ./logs/{model_name}/{version}
+        - save the model to ./models/{model_name}/{version}
 
     Args:
-        deterministic (bool): Whether to use deterministic training
-        model_name (str): The name of the model
-        max_epochs (int, optional): The maximum number of epochs. Defaults to 100.
-        max_time (datetime.timedelta, optional): The maximum time for training. Defaults to datetime.timedelta(hours=1).
-        log_every_n_steps (int, optional): Log every n steps. Defaults to 10.
-        check_val_every_n_epoch (int, optional): Check validation every n epochs. Defaults to 3.
-        callbacks (Optional[list[lightning.pytorch.callbacks.Callback]], optional): The callbacks. Defaults to None.
-        use_distributed_sampler (bool, optional): Use distributed sampler. Defaults to False.
-        random_seed (int, optional): The random seed. Defaults to 2024.
+        deterministic (bool): Whether to set the random seed
+        model_name (str): The model name
+        max_epochs (int): The maximum number of epochs
+        max_time (datetime.timedelta): The maximum time
+        log_every_n_steps (int): The number of steps to log
+        check_val_every_n_epoch (int): The number of epochs to check validation
+        callbacks (Optional[list[lightning.pytorch.callbacks.Callback]]): The callbacks
+        use_distributed_sampler (bool): Whether to use distributed sampler
+        random_seed (int): The random seed
+        **kwargs: Additional
 
     Returns:
-        lightning.pytorch.Trainer: The trainer object
+        trainer (lightning.pytorch.Trainer): The trainer
     """
 
     lightning.pytorch.seed_everything(random_seed, workers=True)

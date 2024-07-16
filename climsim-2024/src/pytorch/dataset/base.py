@@ -27,19 +27,65 @@ class DatasetBase(torch.utils.data.Dataset, ABC):
         """DatasetBase constructor
 
         Args:
-            source (str): The source of the dataset
-            x_stats (str): The path to the x statistics
-            y_stats (str): The path to the y statistics
+            source (str): The path to the dataset
+            x_stats (str): The path to the x statistics (parquet file)
+            y_stats (str): The path to the y statistics (parquet file)
             device (str): The device to use
             is_to_tensor (bool): Whether to convert to tensor
             is_normalize (bool): Whether to normalize the data
             is_standardize (bool): Whether to standardize the data
+
+        Raises:
+            ValueError: If the x_stats or y_stats file is not a parquet file
+
+        Methods:
+            _init_normalization_scaling: Get the scaling values for normalization (from x_stats and y_stats)
+            _init_standardization_scaling: Get the scaling values for standardization (from x_stats and y_stats)
+            _normalize_x: Normalize the input
+            _normalize_y: Normalize the output
+            _standardize_x: Standardize the input
+            _standardize_y: Standardize the output
+            _to_tensor: Convert the input and output from numpy arrays to PyTorch tensors
+            preprocess_features: Preprocess the input
+            preprocess_targets: Preprocess the output
+            postprocess_targets: Postprocess the output
+            get_batch: Return a batch of data
+            to_dataloader: Return a DataLoader object
+
+        Attributes:
+            _source (str): The path to the dataset
+            _device (str): The device to use
+            x_stats (pd.DataFrame): The x statistics
+            y_stats (pd.DataFrame): The y statistics
+            input_cols (List[str]): The input columns
+            output_cols (List[str]): The output columns
+            _is_to_tensor (bool): Whether to convert to tensor
+            _is_normalize (bool): Whether to normalize the data
+            _is_standardize (bool): Whether to standardize the data
+            _x_min (np.ndarray): The minimum values for the input
+            _x_norm_scaling (np.ndarray): The scaling values for normalization (max - min)
+            _y_min (np.ndarray): The minimum values for the output
+            _y_norm_scaling (np.ndarray): The scaling values for normalization (max - min)
+            _x_std_mean (np.ndarray): The mean values for standardization (input)
+            _x_std_scaling (np.ndarray): The scaling values for standardization (standard deviation)
+            _y_std_mean (np.ndarray): The mean values for standardization (output)
+            _y_std_scaling (np.ndarray): The scaling values for standardization (standard deviation)
         """
 
         super().__init__()
 
         self._source = source
         self._device = device
+
+        if ".parquet" not in x_stats:
+            message = "x_stats should be a parquet file"
+            local_logger.error(message)
+            raise ValueError(message)
+
+        if ".parquet" not in y_stats:
+            message = "y_stats should be a parquet file"
+            local_logger.error(message)
+            raise ValueError(message)
 
         self.x_stats = pd.read_parquet(x_stats)
         self.y_stats = pd.read_parquet(y_stats)
@@ -118,7 +164,16 @@ class DatasetBase(torch.utils.data.Dataset, ABC):
         return torch.Tensor(inputs).to(self._device)
 
     def preprocess_features(self, x: np.ndarray) -> np.ndarray | torch.Tensor:
-        """Preprocess the input"""
+        """Preprocess the input
+
+        Args:
+            x (np.ndarray): The input data
+
+        Returns:
+            x (np.ndarray | torch.Tensor): The preprocessed input data
+                - np.ndarray: if is_to_tensor is False
+                - torch.Tensor: if is_to_tensor is True
+        """
 
         if self._is_normalize:
             x = self._normalize_x(x)
@@ -131,7 +186,16 @@ class DatasetBase(torch.utils.data.Dataset, ABC):
         return x
 
     def preprocess_targets(self, y: np.ndarray) -> np.ndarray | torch.Tensor:
-        """Preprocess the output"""
+        """Preprocess the output
+
+        Args:
+            y (np.ndarray): The target data
+
+        Returns:
+            y (np.ndarray | torch.Tensor): The preprocessed target data
+                - np.ndarray: if is_to_tensor is False
+                - torch.Tensor: if is_to_tensor is True
+        """
 
         if self._is_normalize:
             y = self._normalize_y(y)
@@ -144,7 +208,14 @@ class DatasetBase(torch.utils.data.Dataset, ABC):
         return y
 
     def postprocess_targets(self, y: np.ndarray) -> np.ndarray:
-        """Postprocess the output"""
+        """Postprocess the output
+
+        Args:
+            y (np.ndarray): The target data
+
+        Returns:
+            y (np.ndarray): The postprocessed target data
+        """
 
         if self._is_standardize:
             y[:, self._y_std_scaling == 1] = 0.0
@@ -157,7 +228,7 @@ class DatasetBase(torch.utils.data.Dataset, ABC):
         return y
 
     @abstractmethod
-    def get_batch(self, size: int):
+    def get_batch(self, size: int) -> tuple[np.ndarray | torch.Tensor, np.ndarray | torch.Tensor]:
         """Return a batch of data"""
 
     @abstractmethod

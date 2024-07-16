@@ -10,17 +10,17 @@ from src.pytorch.models.base import ModelBase
 local_logger = src.logger.get_logger(__name__)
 
 
-# Checked with https://www.kaggle.com/code/abiolatti/keras-baseline-seq2seq
-# Same results as keras implementation
 def to_sequential_features(x: torch.Tensor) -> torch.Tensor:
-    """
-    Convert the input tensor to sequential features. (For ClimSim dataset only)
+    """Convert the input tensor to sequential features.
+    NOTE: This function is for ClimSim dataset only
+    Checked with https://www.kaggle.com/code/abiolatti/keras-baseline-seq2seq
+    Same results as keras implementation
 
     Args:
-        x: The input tensor.
+        x (torch.Tensor): The input tensor.
 
     Returns:
-        The input tensor converted to sequential features
+        x (torch.Tensor): The reshaped input tensor.
     """
 
     # Reshape and transpose components
@@ -39,30 +39,63 @@ class CNN(ModelBase):
 
     def __init__(
         self,
-        layers_hidden: Optional[nn.Sequential] = None,
+        layers_hidden: Optional[list[int]] = None,
+        kernal_size_hidden: Optional[list[int]] = None,
+        padding: str = "same",
         scheduler_config: Optional[dict[str, Any]] = None,
         loss_fn: Optional[Callable] = None,
     ) -> None:
-        """CNN Constructor."""
+        """CNN Constructor.
+
+        Args:
+            layers_hidden (list[int]): Hidden layer sizes
+            kernal_size_hidden (list[int]): Kernel sizes for hidden layers
+            padding (str): Padding type
+            scheduler_config (dict[str, Any]): Scheduler configuration
+            loss_fn (Callable): Loss function
+
+        raises:
+            ValueError: If the number of hidden layers is not one less than the number of kernel sizes
+
+        Attributes:
+            _layers (nn.Sequential): The hidden layers
+        """
 
         super().__init__(scheduler_config=scheduler_config, loss_fn=loss_fn)
 
-        self._conv_init = nn.Conv1d(in_channels=25, out_channels=64, kernel_size=1, padding="same")
-        self._global_avg_pool = nn.AdaptiveAvgPool1d(60)
-        self._conv_final = nn.Conv1d(64, 14, kernel_size=1, padding="same")
-        self._batch_norm = nn.BatchNorm1d(64)
+        if layers_hidden is None:
+            layers_hidden = [25, 128, 64, 14]
 
-        self._layers = layers_hidden or nn.Sequential(
-            nn.Conv1d(in_channels=64, out_channels=256, kernel_size=3, padding="same"),
-            nn.ReLU(),
-            nn.BatchNorm1d(256),
-            nn.Conv1d(256, 128, kernel_size=3, padding="same"),
-            nn.ReLU(),
-            nn.BatchNorm1d(128),
-            nn.Conv1d(128, 64, kernel_size=3, padding="same"),
-            nn.ReLU(),
-            nn.BatchNorm1d(64),
+        if kernal_size_hidden is None:
+            kernal_size_hidden = [3, 3, 3]
+
+        if len(layers_hidden) - 1 != len(kernal_size_hidden):
+            message = "The number of hidden layers should be one less than the number of kernel sizes."
+            local_logger.error(message)
+            raise ValueError(message)
+
+        layers: list[nn.Module] = []
+        for i in range(len(layers_hidden) - 2):
+            layers.append(
+                nn.Conv1d(
+                    in_channels=layers_hidden[i],
+                    out_channels=layers_hidden[i + 1],
+                    kernel_size=kernal_size_hidden[i],
+                    padding=padding,
+                )
+            )
+            layers.append(nn.ReLU())
+            layers.append(nn.BatchNorm1d(layers_hidden[i + 1]))
+
+        layers.append(
+            nn.Conv1d(
+                in_channels=layers_hidden[-2],
+                out_channels=layers_hidden[-1],
+                kernel_size=kernal_size_hidden[-1],
+                padding=padding,
+            )
         )
+        self._layers = nn.Sequential(*layers)
 
         super().__post_init__()
 
@@ -70,13 +103,7 @@ class CNN(ModelBase):
         """Forward pass of the model."""
 
         x = to_sequential_features(x)
-        e0 = self._conv_init(x)
-        e = self._layers(e0)
-        e = e0 + e + self._global_avg_pool(e)
-        e = self._batch_norm(e)
-        e = e + self._layers(e)
-
-        p_all = self._conv_final(e)
+        p_all = self._layers(x)
 
         p_seq = p_all[:, :6, :]
         p_seq = p_seq.permute(0, 2, 1).reshape(p_seq.shape[0], -1)

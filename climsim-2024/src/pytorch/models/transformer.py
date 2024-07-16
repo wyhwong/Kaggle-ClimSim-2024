@@ -24,7 +24,32 @@ class Transformer(ModelBase):
         scheduler_config: Optional[dict[str, Any]] = None,
         loss_fn: Optional[Callable] = None,
     ) -> None:
-        """Initialize the model."""
+        """Transformer constructor.
+
+        Args:
+            input_dim (int): The input dimension
+            output_dim (int): The output dimension
+            hidden_dim (int): The hidden dimension
+            num_layers (int): The number of layers
+            num_heads (int): The number of heads
+            dropout (float): The dropout rate
+            scheduler_config (Optional[dict[str, Any]]): The scheduler configuration
+            loss_fn (Optional[Callable]): The loss function
+
+        Attributes:
+            _input_dim (int): The input dimension
+            _output_dim (int): The output dimension
+            _hidden_dim (int): The hidden dimension
+            _num_layers (int): The number of layers
+            _num_heads (int): The number of heads
+            _dropout (float): The dropout rate
+            _embedding_layer (nn.Linear): The embedding layer
+            _transformer (nn.Transformer): The transformer layer
+            _fc_layer (nn.Linear): The fully connected layer
+
+        Methods:
+            forward: Forward pass of the model
+        """
 
         super().__init__(scheduler_config=scheduler_config, loss_fn=loss_fn or nn.CrossEntropyLoss())
 
@@ -55,4 +80,5 @@ class Transformer(ModelBase):
         x = self._embedding_layer(x)
         x = self._transformer(x, x)
         x = self._fc_layer(x)
+
         return x

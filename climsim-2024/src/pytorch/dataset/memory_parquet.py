@@ -10,7 +10,7 @@ import src.pytorch.dataset.base as base
 local_logger = src.logger.get_logger(__name__)
 
 
-class FileDataset(base.DatasetBase):
+class MemoryParquetDataset(base.DatasetBase):
     """PyTorch dataset for parquet files"""
 
     def __init__(
@@ -23,7 +23,24 @@ class FileDataset(base.DatasetBase):
         is_normalize: bool = False,
         is_standardize: bool = True,
     ) -> None:
-        """TinyDataset constructor"""
+        """MemoryParquetDataset constructor
+
+        Args:
+            source (str): The path to the dataset
+            x_stats (str): The path to the x statistics (parquet file)
+            y_stats (str): The path to the y statistics (parquet file)
+            device (str): The device to use
+            is_to_tensor (bool): Whether to convert to tensor
+            is_normalize (bool): Whether to normalize the data
+            is_standardize (bool): Whether to standardize the data
+
+        Methods (excluding inherited methods):
+            read_source: Read the source file
+            __len__: Return the number of samples in the dataset
+            __getitem__: Return the idx-th sample from the dataset
+            get_batch: Get a batch of data
+            to_dataloader: Return a torch DataLoader object
+        """
 
         super().__init__(source, x_stats, y_stats, device, is_to_tensor, is_normalize, is_standardize)
 
@@ -53,15 +70,33 @@ class FileDataset(base.DatasetBase):
 
         return self.x[idx], self.y[idx]
 
-    def get_batch(self, size: int) -> tuple[np.ndarray, np.ndarray] | tuple[torch.Tensor, torch.Tensor]:
+    def get_batch(self, size: int) -> tuple[np.ndarray | torch.Tensor, np.ndarray | torch.Tensor]:
         """Get a batch of data
         NOTE: This method is used for testing purposes only.
+
+        Args:
+            size (int): The batch size
+
+        Returns:
+            x (np.ndarray | torch.Tensor): The input data
+                - np.ndarray: if is_to_tensor is False
+                - torch.Tensor: if is_to_tensor is True
+            y (np.ndarray | torch.Tensor): The output data
+                - np.ndarray: if is_to_tensor is False
+                - torch.Tensor: if is_to_tensor is True
         """
 
         idx = np.random.randint(0, len(self), size)
         return self.x[idx], self.y[idx]
 
     def to_dataloader(self, **kwargs) -> torch.utils.data.DataLoader:
-        """Return a torch DataLoader object"""
+        """Return a torch DataLoader object
+
+        Args:
+            **kwargs: Additional arguments for DataLoader
+
+        Returns:
+            dataloader (torch.utils.data.DataLoader): The DataLoader object
+        """
 
         return torch.utils.data.DataLoader(self, **kwargs)
